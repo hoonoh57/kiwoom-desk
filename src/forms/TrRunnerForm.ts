@@ -1,4 +1,4 @@
-import { ChildForm } from './ChildForm';
+﻿import { ChildForm } from './ChildForm';
 import { getSpec, buildDefaultBody, validateBody, cleanBody, TrSpec, TrField } from '../api/trSchema';
 
 type ViewMode = 'table' | 'json';
@@ -207,12 +207,12 @@ export class TrRunnerForm extends ChildForm {
 
     try {
       const res: any = await this.ctx.api.call(s.id, s.path, cleanBody(s, this.body), {
-        contYn: next ? this.contYn : undefined,
+        contYn: next ? 'Y' : undefined,
         nextKey: next ? this.nextKey : undefined,
       });
 
       const payload = res?.data ?? res?.body ?? res;
-      this.contYn = res?.contYn ?? '';
+      this.contYn = res?.contYn ? 'Y' : '';
       this.nextKey = res?.nextKey ?? '';
 
       if (next && this.lastResult && s.listKey && Array.isArray(payload?.[s.listKey])) {
@@ -228,8 +228,5 @@ export class TrRunnerForm extends ChildForm {
     }
   }
 
-  private esc(s: string): string {
-    return String(s).replace(/[&<>"]/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-  }
 }
+

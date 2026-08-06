@@ -1,4 +1,4 @@
-import { ChildForm } from './ChildForm';
+﻿import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
 
 type PeriodId = 'tick' | 'min' | 'day' | 'week' | 'month' | 'year';
@@ -34,6 +34,9 @@ export class ChartForm extends ChildForm {
   private bars: Bar[] = [];
   private contYn = ''; private nextKey = '';
   private busy = false;
+
+  private volCap = 0;
+  private volRaw = false;
 
   private chart: any;
   private candles: any;
@@ -82,6 +85,7 @@ export class ChartForm extends ChildForm {
               `<option value="${s.v}" ${s.v === this.scope ? 'selected' : ''}>${s.t}</option>`).join('')}
           </select>
           <label class="chk"><input type="checkbox" id="cUpd" ${this.upd === '1' ? 'checked' : ''}> 수정주가</label>
+          <label class="chk" title="체크하면 거래량 축을 실제 최댓값으로 씁니다"><input type="checkbox" id="cVolRaw" ${this.volRaw ? 'checked' : ''}> 거래량 원본</label>
           <button class="lnk" id="cMore" title="과거 데이터 이어붙이기">◂ 더보기</button>
           <button class="lnk" id="cFit" title="전체보기">⤢</button>
         </div>
@@ -114,6 +118,11 @@ export class ChartForm extends ChildForm {
       this.upd = (e.target as HTMLInputElement).checked ? '1' : '0';
       void this.load(false);
     });
+    this.$('#cVolRaw')?.addEventListener('change', e => {
+      this.volRaw = (e.target as HTMLInputElement).checked;
+      this.computeVolCap();
+      this.volume?.applyOptions({});
+    });
     this.$('#cMore')?.addEventListener('click', () => void this.load(true));
     this.$('#cFit')?.addEventListener('click', () => this.chart?.timeScale().fitContent());
   }
@@ -121,6 +130,15 @@ export class ChartForm extends ChildForm {
   private async boot(): Promise<void> {
     if (!this.chart) await this.initChart();
     await this.load(false);
+  }
+
+  /** 거래량 오토스케일 상한. 동시호가 대량체결 1건이 축을 잡아먹는 것을 막는다. */
+  private computeVolCap(): void {
+    if (this.volRaw) { this.volCap = 0; return; }
+    const v = this.bars.map(b => b.volume).filter(x => x > 0).sort((a, b) => a - b);
+    if (v.length < 5) { this.volCap = 0; return; }
+    const q = (p: number) => v[Math.min(v.length - 1, Math.floor(v.length * p))];
+    this.volCap = Math.max(q(0.95) * 1.2, q(0.5) * 4);
   }
 
   /** lightweight-charts v5 (addSeries + 시리즈 정의 객체) */
@@ -146,7 +164,7 @@ export class ChartForm extends ChildForm {
         panes: { separatorColor: '#3a3a3a', separatorHoverColor: '#4a5a6a', enableResize: true },
       },
       grid: { vertLines: { color: '#2a2a2a' }, horzLines: { color: '#2a2a2a' } },
-      rightPriceScale: { borderColor: '#3a3a3a', scaleMargins: { top: 0.06, bottom: 0.06 } },
+      rightPriceScale: { borderColor: '#3a3a3a', scaleMargins: { top: 0.08, bottom: 0.08 } },
       timeScale: { borderColor: '#3a3a3a', timeVisible: this.period.intraday, secondsVisible: false, rightOffset: 4 },
       crosshair: { mode: CrosshairMode.Normal },
       localization: {
@@ -155,7 +173,6 @@ export class ChartForm extends ChildForm {
       },
     });
 
-    // pane 0 : 캔들 + 이동평균
     this.candles = this.chart.addSeries(CandlestickSeries, {
       upColor: RED, downColor: BLUE,
       borderUpColor: RED, borderDownColor: BLUE,
@@ -171,17 +188,19 @@ export class ChartForm extends ChildForm {
     this.ma20 = this.chart.addSeries(LineSeries, maOpt('#98c379'), 0);
     this.ma60 = this.chart.addSeries(LineSeries, maOpt('#c678dd'), 0);
 
-    // pane 1 : 거래량 (v5 는 세 번째 인자로 pane index 지정)
     this.volume = this.chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceLineVisible: false,
+      lastValueVisible: false,
+      autoscaleInfoProvider: (orig: () => any) => {
+        if (this.volCap <= 0) return orig();
+        return { priceRange: { minValue: 0, maxValue: this.volCap }, margins: { above: 8, below: 0 } };
+      },
     }, 1);
-    this.chart.panes()[1]?.setHeight(110);
+    try { this.chart.panes()[1]?.setHeight(120); } catch { /* v5 초기버전 호환 */ }
 
     this.chart.subscribeCrosshairMove((p: any) => this.paintLegend(p));
 
-    // autoSize 가 내부적으로 크기를 추적하므로 수동 resize 는 하지 않는다.
-    // 패널이 숨겨졌다 다시 보일 때만 타임스케일을 정리해 준다.
     this.ro = new ResizeObserver(() => {
       const r = host.getBoundingClientRect();
       if (r.width > 0 && r.height > 0 && this.bars.length === 0) {
@@ -214,11 +233,13 @@ export class ChartForm extends ChildForm {
 
     try {
       const res: any = await this.ctx.api.call(def.apiId, '/api/dostk/chart', body, {
-        contYn: more ? this.contYn : undefined,
+        contYn: more ? 'Y' : undefined,
         nextKey: more ? this.nextKey : undefined,
       });
       const data = this.payload(res);
-      this.contYn = res?.contYn ?? ''; this.nextKey = res?.nextKey ?? '';
+      // KiwoomClient.contYn 은 boolean 이다. 문자열로 정규화한다.
+      this.contYn = res?.contYn ? 'Y' : '';
+      this.nextKey = res?.nextKey ?? '';
 
       if (data?.return_code !== undefined && data.return_code !== 0) {
         this.status(`오류 rc=${data.return_code} ${data.return_msg ?? ''}`);
@@ -229,6 +250,7 @@ export class ChartForm extends ChildForm {
       const parsed = rows.map(r => this.toBar(r, def)).filter(Boolean) as Bar[];
       if (!parsed.length && !more) { this.status('데이터가 없습니다.'); return; }
       this.bars = this.merge(parsed, more ? this.bars : []);
+      this.computeVolCap();
 
       this.candles.setData(this.bars.map(b => ({
         time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,

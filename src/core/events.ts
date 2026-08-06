@@ -1,4 +1,4 @@
-export type Handler<T> = (payload: T) => void;
+﻿export type Handler<T> = (payload: T) => void;
 
 export class Emitter<T> {
   private handlers = new Set<Handler<T>>();
@@ -59,6 +59,7 @@ export const Topics = {
   RealtimeTick: 'rt.tick',
   ConditionHit: 'condition.hit',
   ConnectionChanged: 'conn.changed',
+  WsChanged: 'ws.changed',
   Log: 'log.append'
 } as const;
 
@@ -70,3 +71,4 @@ export interface RealtimePayload extends Broadcast {
   item?: string;
   values?: Record<string, string>;
 }
+
