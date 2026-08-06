@@ -363,3 +363,9 @@ table.grid tr.clickable{cursor:pointer}
 .cnd-ev .ev{padding:2px 4px;border-bottom:1px solid #2a2a2a}
 .cnd-ev .ev.up{color:#e34a4a}
 .cnd-ev .ev.dn{color:#3f7fd6}
+
+/* 조건검색 표 보강 */
+.grid th.num, .grid td.num { text-align: right; }
+.grid td .mono { font-family: Consolas, monospace; letter-spacing: .3px; }
+.grid tbody tr.sel { background: #2d3a4a; }
+.grid tbody tr.clickable:hover { background: #2a2a2a; cursor: pointer; }
