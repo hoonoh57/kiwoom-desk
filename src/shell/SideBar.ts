@@ -111,10 +111,12 @@ export class SideBar {
   private openForm(formId: string, apiId?: string): void {
     const dock: any = (this.ctx as any).dock;
     if (!dock?.open) { this.ctx.log.error('DockService 가 준비되지 않았습니다.'); return; }
-    // 같은 TR 은 하나의 패널로 재사용
-    const key = apiId ? `${formId}:${apiId}` : formId;
-    dock.open(formId, apiId ? { apiId } : undefined, { key });
-    this.ctx.log.info(`패널 열기: ${key}`);
+    // 패널 키는 DockService가 폼의 인스턴스 정책에 따라 결정한다.
+    const panel = dock.open(
+      formId,
+      apiId ? { apiId } : undefined,
+    );
+    this.ctx.log.info(`패널 열기: ${panel?.id ?? formId}`);
   }
 
   private esc(s: string): string {

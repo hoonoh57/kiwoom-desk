@@ -6,7 +6,7 @@ import {
   type IDockviewPanel,
 } from 'dockview-core';
 import type { AppContext } from '../core/context';
-import { createForm, formTitle } from '../forms/registry';
+import { createForm, formTitle, formInstancePolicy, type InstancePolicy } from '../forms/registry';
 import type { ChildForm } from '../forms/ChildForm';
 
 /** dockview 패널 1개 = ChildForm 1개 */
@@ -60,7 +60,7 @@ export interface OpenOptions extends OpenPosition {
   inactive?: boolean;  // 열되 포커스 주지 않음
 }
 
-const LAYOUT_KEY = 'kiwoom-desk.layout.v2';
+const LAYOUT_KEY = 'kiwoom-desk.layout.v3';
 
 export class DockService {
   private api!: DockviewApi;
@@ -88,9 +88,9 @@ export class DockService {
   open(formId: string, params: Record<string, any> = {}, opts: OpenOptions = {}): IDockviewPanel | undefined {
     if (!this.api) { this.ctx.log.error('DockService 가 아직 mount 되지 않았습니다.'); return; }
 
-    const unique = opts.unique !== false;
-    const baseKey = opts.key ?? (params.apiId ? `${formId}:${params.apiId}` : formId);
-    const key = unique ? baseKey : `${baseKey}#${++this.seq}`;
+    // 패널 키는 폼의 인스턴스 정책에 따라 DockService 한 곳에서만 생성한다.
+    const policy = formInstancePolicy(formId);
+    const key = this.keyFor(formId, params, policy, opts);
     const title = opts.title ?? formTitle(formId, params);
 
     const exist = this.api.getPanel(key);
@@ -114,6 +114,29 @@ export class DockService {
     return panel;
   }
 
+  /** 폼 인스턴스 정책에 따른 패널 키 생성 */
+  private keyFor(
+    formId: string,
+    params: Record<string, any>,
+    policy: InstancePolicy,
+    opts: OpenOptions,
+  ): string {
+    // singleton은 호출자가 opts.key 또는 unique:false를 지정해도 복제하지 않는다.
+    if (policy === 'singleton') {
+      return formId;
+    }
+
+    const baseKey = opts.key
+      ?? (params.apiId ? `${formId}:${params.apiId}` : formId);
+
+    // multi는 항상 새 패널을 만들고,
+    // per-api도 unique:false가 명시되면 새 패널을 만든다.
+    if (policy === 'multi' || opts.unique === false) {
+      return `${baseKey}#${++this.seq}`;
+    }
+
+    return baseKey;
+  }
   private resolvePosition(opts: OpenOptions): any {
     if (opts.floating) return undefined;
     if (!opts.direction) return undefined;
