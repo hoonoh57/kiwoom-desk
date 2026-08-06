@@ -1,0 +1,12 @@
+﻿node_modules/
+dist/
+.vite/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.DS_Store
+
+.token-cache.json
+*.token-cache.json

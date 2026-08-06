@@ -1,0 +1,18 @@
+:root{
+  --bg:#1e1e1e; --bg-alt:#252526; --bg-deep:#1b1b1b; --activity:#333333;
+  --border:#2b2b2b; --fg:#cccccc; --fg-dim:#8b8b8b; --accent:#0e639c;
+  --accent-hi:#1177bb; --focus:#007fd4; --status:#007acc;
+  --up:#f2504b; --down:#3a7bfd; --ok:#4ec9b0; --warn:#dcdcaa; --err:#f48771;
+  --font: "Segoe UI","Malgun Gothic",-apple-system,sans-serif;
+  --mono: "Cascadia Mono",Consolas,"D2Coding",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:13px/1.5 var(--font);overflow:hidden}
+button{font:inherit;color:inherit}
+.btn{border:1px solid transparent;background:#3a3d41;padding:3px 10px;border-radius:2px;cursor:pointer}
+.btn:hover{background:#45494e}
+.btn.primary{background:var(--accent)} .btn.primary:hover{background:var(--accent-hi)}
+input,textarea,select{background:#3c3c3c;border:1px solid #3c3c3c;color:var(--fg);padding:3px 6px;border-radius:2px;outline:none}
+input:focus,textarea:focus{border-color:var(--focus)}
+.chip{padding:1px 8px;border-radius:9px;background:#3a3d41;font-size:11px}
+.spacer{flex:1}
