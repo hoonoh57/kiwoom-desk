@@ -363,26 +363,67 @@ export class ConditionForm extends ChildForm {
           this.liveSeq = '';
         }
 
-        const m: any =
+        const registration: any =
           await this.ctx.rt.conditionSearch(target, '1');
 
-        this.assertOk(m, `실시간 조건식 ${target} 등록`);
+        this.assertOk(
+          registration,
+          `실시간 조건식 ${target} 등록`,
+        );
 
-        // 성공 응답을 받은 뒤에만 등록 상태를 확정한다.
+        // 성공 응답을 받은 뒤에만 실제 등록 상태를 확정한다.
         this.liveSeq = target;
 
-        const list = this.normRows(m?.data);
+        /*
+         * search_type=1의 최초 조회 데이터는 jmcode만 반환한다.
+         * 실패 시 사용할 fallback으로 보관하고, 이어지는 일반검색으로
+         * 종목명·현재가·등락률·거래량 등의 상세 snapshot을 받는다.
+         */
+        const fallbackRows =
+          this.normRows(registration?.data);
 
-        if (list.length) {
-          this.rows = list;
+        let detailError = '';
+
+        try {
+          const snapshot: any =
+            await this.ctx.rt.conditionSearch(target, '0');
+
+          this.assertOk(
+            snapshot,
+            `조건식 ${target} 상세조회`,
+          );
+
+          const detailRows =
+            this.normRows(snapshot?.data);
+
+          this.rows =
+            detailRows.length
+              ? detailRows
+              : fallbackRows;
+
           this.paintRows();
-        }
+        } catch (e: any) {
+          detailError = String(e?.message ?? e);
 
+          this.rows = fallbackRows;
+          this.paintRows();
+
+          this.ctx.log.warn(
+            `조건식 ${target} 실시간 등록은 성공했지만 `
+            + `상세 snapshot 조회에 실패했습니다: `
+            + detailError,
+          );
+        }
         // 조건식이 바뀌었으므로 이전 편입·이탈 기록과 혼합하지 않는다.
         this.events = [];
         this.paintEvents();
 
-        this.info(`실시간 등록됨 · 조건식 ${target}`);
+        this.info(
+          detailError
+            ? `실시간 등록됨 · 조건식 ${target}`
+              + ` · 상세조회 실패: ${detailError}`
+            : `실시간 등록됨 · 조건식 ${target}`,
+        );
       } else {
         const active = this.liveSeq;
 
