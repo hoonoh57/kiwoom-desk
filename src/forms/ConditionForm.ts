@@ -26,7 +26,7 @@ export class ConditionForm extends ChildForm {
   private conds: Cond[] = [];
   private sel = '';
   private rows: any[] = [];
-  private live = false;
+  private liveSeq = '';
   private busy = false;
   private events: string[] = [];
 
@@ -35,35 +35,78 @@ export class ConditionForm extends ChildForm {
     this.render();
     void this.loadList();
 
-    // WS LOGIN 이 폼 오픈보다 늦을 수 있다. 연결되는 순간 목록을 다시 받는다.
+    // WS LOGIN이 폼 오픈보다 늦을 수 있다.
+    // 연결이 끊기면 서버 측 실시간 등록도 유효하다고 볼 수 없으므로
+    // 로컬 등록 상태와 체크박스를 함께 초기화한다.
     this.track(this.ctx.bus.on(Topics.WsChanged, (p: any) => {
-      if (p?.connected && !this.conds.length) void this.loadList();
+      if (!p?.connected) {
+        const wasLive = this.liveSeq !== '';
+        this.liveSeq = '';
+        this.syncLiveCheck();
+
+        if (wasLive) {
+          this.info('WS 연결이 끊겨 실시간 등록 상태를 초기화했습니다.');
+        }
+        return;
+      }
+
+      if (!this.conds.length) {
+        void this.loadList();
+      }
     }));
 
+    // 조건검색 실시간 편입/이탈 이벤트.
+    // FID 841은 조건식 일련번호가 아니므로 선택 seq와 비교하지 않는다.
     this.track(this.ctx.bus.on(Topics.RealtimeTick, (d: any) => {
-      if (!this.live) return;
+      if (!this.liveSeq) return;
+
       const v = d?.values ?? d ?? {};
-      const seq = String(v['841'] ?? d?.item ?? '');
-      if (this.sel && seq && !seq.includes(this.sel)) return;
       const io = String(v['843'] ?? '').trim();
+
       if (!io) return;
+
       const code = this.plain(String(v['9001'] ?? ''));
-      const tag = io === 'I' ? '편입' : io === 'D' ? '이탈' : io;
-      this.events.unshift(`${new Date().toLocaleTimeString('ko-KR')} [${tag}] ${code}`);
+      if (!code) return;
+
+      const tag =
+        io === 'I'
+          ? '편입'
+          : io === 'D'
+            ? '이탈'
+            : io;
+
+      this.events.unshift(
+        `${new Date().toLocaleTimeString('ko-KR')} [${tag}] ${code}`,
+      );
+
       this.events = this.events.slice(0, 200);
       this.paintEvents();
     }));
 
-    this.track(this.ctx.bus.on(Topics.ConditionHit, (m: any) => {
-      const list = this.normRows(m?.data);
-      if (!list.length) return;
-      this.rows = list;
-      this.paintRows();
-    }));
+    // ChildForm.dispose()/setParams()에서 호출된다.
+    // 현재 콤보박스 값이 아니라 실제 등록된 조건식 번호를 해제한다.
+    this.track(() => {
+      const seq = this.liveSeq;
+      this.liveSeq = '';
 
-    this.track(() => { if (this.live && this.sel) this.ctx.rt.conditionClear(this.sel); });
+      if (!seq || !this.ctx.rt.connected) return;
+
+      void this.ctx.rt.conditionClear(seq)
+        .then((m: any) => {
+          if (Number(m?.return_code) !== 0) {
+            this.ctx.log.warn(
+              `조건검색 실시간 해제 실패(${seq}): `
+              + `rc=${m?.return_code ?? '?'} ${m?.return_msg ?? ''}`,
+            );
+          }
+        })
+        .catch((e: any) => {
+          this.ctx.log.warn(
+            `조건검색 실시간 해제 예외(${seq}): ${e?.message ?? e}`,
+          );
+        });
+    });
   }
-
   private render(): void {
     this.html(`
       <div class="cnd-form">
@@ -89,13 +132,56 @@ export class ConditionForm extends ChildForm {
 
     this.$('#kGo')?.addEventListener('click', () => void this.search());
     this.$('#kReload')?.addEventListener('click', () => void this.loadList());
-    this.$('#kSel')?.addEventListener('change', e => {
-      this.sel = (e.target as HTMLSelectElement).value;
+    this.$<HTMLSelectElement>('#kSel')?.addEventListener('change', e => {
+      const next = (e.target as HTMLSelectElement).value;
+      const shouldMoveLive =
+        this.liveSeq !== ''
+        && this.liveSeq !== next;
+
+      this.sel = next;
+
+      if (shouldMoveLive) {
+        void this.toggleLive(true);
+      }
     });
-    this.$('#kLive')?.addEventListener('change', e => {
-      const on = (e.target as HTMLInputElement).checked;
-      void this.toggleLive(on);
+
+    this.$<HTMLInputElement>('#kLive')?.addEventListener('change', e => {
+      const box = e.target as HTMLInputElement;
+      void this.toggleLive(box.checked);
     });
+  }
+
+  private setControlsBusy(on: boolean): void {
+    const select = this.$<HTMLSelectElement>('#kSel');
+    const live = this.$<HTMLInputElement>('#kLive');
+    const search = this.$<HTMLButtonElement>('#kGo');
+    const reload = this.$<HTMLButtonElement>('#kReload');
+
+    if (select) select.disabled = on;
+    if (live) live.disabled = on;
+    if (search) search.disabled = on;
+    if (reload) reload.disabled = on;
+  }
+
+  private syncLiveCheck(): void {
+    const box = this.$<HTMLInputElement>('#kLive');
+    if (box) box.checked = this.liveSeq !== '';
+  }
+
+  private assertOk(message: any, operation: string): void {
+    const rc = Number(message?.return_code);
+
+    if (Number.isFinite(rc) && rc === 0) {
+      return;
+    }
+
+    const rawCode = message?.return_code ?? '?';
+    const rawMessage = String(message?.return_msg ?? '').trim();
+
+    throw new Error(
+      `${operation} 실패 · rc=${rawCode}`
+      + (rawMessage ? ` · ${rawMessage}` : ''),
+    );
   }
 
   /** 시장구분 접두 문자 제거: A005930 → 005930 */
@@ -134,71 +220,193 @@ export class ConditionForm extends ChildForm {
 
   private async loadList(): Promise<void> {
     const selEl = this.$<HTMLSelectElement>('#kSel');
+
     if (!this.ctx.rt.connected) {
-      if (selEl) selEl.innerHTML = `<option value="">WS 연결 대기중…</option>`;
-      this.info('WS LOGIN 대기중… 연결되면 자동으로 목록을 불러옵니다.');
+      if (selEl) {
+        selEl.innerHTML =
+          `<option value="">WS 연결 대기중…</option>`;
+      }
+
+      this.info(
+        'WS LOGIN 대기중… 연결되면 자동으로 목록을 불러옵니다.',
+      );
       return;
     }
+
+    const previous = this.sel;
+
     try {
       const m: any = await this.ctx.rt.conditionList();
+      this.assertOk(m, '조건식 목록 조회');
+
       const raw = m?.data ?? [];
-      this.conds = raw.map((x: any) => Array.isArray(x)
-        ? { seq: String(x[0] ?? ''), name: String(x[1] ?? '') }
-        : { seq: String(x?.seq ?? ''), name: String(x?.name ?? '') })
+
+      this.conds = raw
+        .map((x: any) =>
+          Array.isArray(x)
+            ? {
+                seq: String(x[0] ?? ''),
+                name: String(x[1] ?? ''),
+              }
+            : {
+                seq: String(x?.seq ?? ''),
+                name: String(x?.name ?? ''),
+              },
+        )
         .filter((c: Cond) => c.seq !== '');
+
+      const hasPrevious =
+        this.conds.some(c => c.seq === previous);
+
+      const hasLive =
+        this.liveSeq !== ''
+        && this.conds.some(c => c.seq === this.liveSeq);
+
+      this.sel =
+        hasPrevious
+          ? previous
+          : hasLive
+            ? this.liveSeq
+            : this.conds[0]?.seq ?? '';
 
       if (selEl) {
         selEl.innerHTML = this.conds.length
-          ? this.conds.map(c => `<option value="${this.esc(c.seq)}">${this.esc(c.seq)} · ${this.esc(c.name)}</option>`).join('')
-          : `<option value="">등록된 조건식이 없습니다 (영웅문4에서 생성)</option>`;
-        this.sel = this.conds[0]?.seq ?? '';
+          ? this.conds.map(c =>
+              `<option value="${this.esc(c.seq)}">`
+              + `${this.esc(c.seq)} · ${this.esc(c.name)}`
+              + `</option>`,
+            ).join('')
+          : `<option value="">`
+            + `등록된 조건식이 없습니다 (영웅문4에서 생성)`
+            + `</option>`;
+
+        selEl.value = this.sel;
       }
+
+      this.syncLiveCheck();
       this.info(`조건식 ${this.conds.length}개`);
     } catch (e: any) {
       this.info(`목록 조회 실패: ${e?.message ?? e}`);
     }
   }
-
   private async search(): Promise<void> {
-    if (!this.sel) { this.info('조건식을 선택하세요.'); return; }
+    if (!this.sel) {
+      this.info('조건식을 선택하세요.');
+      return;
+    }
+
     if (this.busy) return;
+
+    const seq = this.sel;
+
     this.busy = true;
+    this.setControlsBusy(true);
     this.info('검색중…');
+
     try {
-      const m: any = await this.ctx.rt.conditionSearch(this.sel, '0');
-      if (m?.return_code !== undefined && m.return_code !== 0) {
-        this.info(`rc=${m.return_code} ${m.return_msg ?? ''}`);
-        return;
-      }
+      const m: any =
+        await this.ctx.rt.conditionSearch(seq, '0');
+
+      this.assertOk(m, '조건검색');
+
       this.rows = this.normRows(m?.data);
       this.paintRows();
-      this.info(`${this.rows.length}종목 포착 · 조건식 ${this.sel} · 행 클릭 시 차트 연동`);
+
+      this.info(
+        `${this.rows.length}종목 포착`
+        + ` · 조건식 ${seq}`
+        + ` · 행 클릭 시 차트 연동`,
+      );
     } catch (e: any) {
       this.info(`검색 실패: ${e?.message ?? e}`);
     } finally {
       this.busy = false;
+      this.setControlsBusy(false);
+      this.syncLiveCheck();
     }
   }
-
   private async toggleLive(on: boolean): Promise<void> {
-    if (!this.sel) { this.info('조건식을 먼저 선택하세요.'); return; }
+    if (this.busy) {
+      this.syncLiveCheck();
+      return;
+    }
+
+    if (on && !this.sel) {
+      this.info('조건식을 먼저 선택하세요.');
+      this.syncLiveCheck();
+      return;
+    }
+
+    this.busy = true;
+    this.setControlsBusy(true);
+
     try {
       if (on) {
-        const m: any = await this.ctx.rt.conditionSearch(this.sel, '1');
-        this.live = true;
+        const target = this.sel;
+
+        if (this.liveSeq === target) {
+          this.info(`이미 실시간 등록됨 · 조건식 ${target}`);
+          return;
+        }
+
+        // 다른 조건식이 등록돼 있으면 반드시 실제 등록 번호로 먼저 해제한다.
+        if (this.liveSeq) {
+          const previous = this.liveSeq;
+          const clearMessage: any =
+            await this.ctx.rt.conditionClear(previous);
+
+          this.assertOk(
+            clearMessage,
+            `기존 실시간 조건식 ${previous} 해제`,
+          );
+
+          this.liveSeq = '';
+        }
+
+        const m: any =
+          await this.ctx.rt.conditionSearch(target, '1');
+
+        this.assertOk(m, `실시간 조건식 ${target} 등록`);
+
+        // 성공 응답을 받은 뒤에만 등록 상태를 확정한다.
+        this.liveSeq = target;
+
         const list = this.normRows(m?.data);
-        if (list.length) { this.rows = list; this.paintRows(); }
-        this.info(`실시간 등록됨 · 조건식 ${this.sel}`);
+
+        if (list.length) {
+          this.rows = list;
+          this.paintRows();
+        }
+
+        // 조건식이 바뀌었으므로 이전 편입·이탈 기록과 혼합하지 않는다.
+        this.events = [];
+        this.paintEvents();
+
+        this.info(`실시간 등록됨 · 조건식 ${target}`);
       } else {
-        await this.ctx.rt.conditionClear(this.sel);
-        this.live = false;
-        this.info('실시간 해제됨');
+        const active = this.liveSeq;
+
+        if (!active) {
+          this.info('실시간 등록 상태가 아닙니다.');
+          return;
+        }
+
+        const m: any =
+          await this.ctx.rt.conditionClear(active);
+
+        this.assertOk(m, `실시간 조건식 ${active} 해제`);
+
+        this.liveSeq = '';
+        this.info(`실시간 해제됨 · 조건식 ${active}`);
       }
     } catch (e: any) {
       this.info(`실시간 처리 실패: ${e?.message ?? e}`);
+    } finally {
+      this.busy = false;
+      this.setControlsBusy(false);
+      this.syncLiveCheck();
     }
   }
-
   private colsOf(): string[] {
     const seen: string[] = [];
     for (const r of this.rows) for (const k of Object.keys(r)) if (!seen.includes(k)) seen.push(k);
