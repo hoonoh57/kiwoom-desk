@@ -350,3 +350,16 @@ table.grid tr.clickable{cursor:pointer}
 .pal-key,.pal-k{margin-left:auto;font-family:var(--mono);font-size:10px;
   color:#9cdcfe;background:#333;padding:1px 5px;border-radius:2px}
 .pal-empty{padding:14px;color:var(--fg-dim);font-size:12px}
+
+/* ── 조건검색 ── */
+.cnd-form{display:flex;flex-direction:column;height:100%;min-height:0}
+.cnd-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border);flex:0 0 auto}
+.cnd-sel{min-width:260px;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);padding:3px 6px}
+.cnd-split{flex:1;display:flex;min-height:0}
+.cnd-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.cnd-main .grid-wrap{flex:1;overflow:auto;min-height:0}
+.cnd-side{width:230px;flex:0 0 auto;border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.cnd-ev{flex:1;overflow:auto;font-family:var(--mono);font-size:11px;padding:4px}
+.cnd-ev .ev{padding:2px 4px;border-bottom:1px solid #2a2a2a}
+.cnd-ev .ev.up{color:#e34a4a}
+.cnd-ev .ev.dn{color:#3f7fd6}

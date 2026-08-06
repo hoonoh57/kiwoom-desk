@@ -1,4 +1,4 @@
-import type { AppContext } from '../core/context';
+﻿import type { AppContext } from '../core/context';
 import type { ChildForm } from './ChildForm';
 import { getSpec } from '../api/trSchema';
 
@@ -11,6 +11,7 @@ import { ChartForm } from './ChartForm';
 import { AccountForm } from './AccountForm';
 import { OrderForm } from './OrderForm';
 import { PlaceholderForm } from './PlaceholderForm';
+import { ConditionForm } from './ConditionForm';
 
 export type FormFactory = (ctx: AppContext, params: Record<string, any>) => ChildForm;
 
@@ -66,7 +67,7 @@ const RAW: Record<string, FormFactory> = {
   chart:     (c, p) => new ChartForm(c, p),
   account:   (c, p) => new AccountForm(c, p),
   order:     (c, p) => new OrderForm(c, p),
-  condition: ph('condition'),
+  condition: (c, p) => new ConditionForm(c, p),
   watchlist: ph('watchlist'),
   autotrade: ph('autotrade'),
   settings:  ph('settings'),
@@ -147,3 +148,4 @@ export function formTitle(formId: string, params: Record<string, any> = {}): str
 }
 
 export default formRegistry;
+
