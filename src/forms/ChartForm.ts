@@ -1,4 +1,4 @@
-﻿import { ChildForm } from './ChildForm';
+import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
 
 type PeriodId = 'tick' | 'min' | 'day' | 'week' | 'month' | 'year';
@@ -17,7 +17,7 @@ const PERIODS: PeriodDef[] = [
   { id: 'day',   label: '일',  apiId: 'ka10081', listKey: 'stk_dt_pole_chart_qry',  timeField: 'dt', intraday: false },
   { id: 'week',  label: '주',  apiId: 'ka10082', listKey: 'stk_stk_pole_chart_qry', timeField: 'dt', intraday: false },
   { id: 'month', label: '월',  apiId: 'ka10083', listKey: 'stk_mth_pole_chart_qry', timeField: 'dt', intraday: false },
-  { id: 'year',  label: '년',  apiId: 'ka10094', listKey: 'stk_yr_pole_chart_qry',  timeField: 'dt', intraday: false },
+  { id: 'year',  label: '년',  apiId: 'ka10094', listKey: 'stk_yr_pole_chart_qry', timeField: 'dt', intraday: false },
 ];
 
 interface Bar { time: any; open: number; high: number; low: number; close: number; volume: number; }
@@ -34,6 +34,7 @@ export class ChartForm extends ChildForm {
   private bars: Bar[] = [];
   private contYn = ''; private nextKey = '';
   private busy = false;
+  private reloadPending = false;
 
   private volCap = 0;
   private volRaw = false;
@@ -43,6 +44,11 @@ export class ChartForm extends ChildForm {
   private volume: any;
   private ma5: any; private ma20: any; private ma60: any;
   private ro?: ResizeObserver;
+
+  private quoteGroup = '';
+  private quoteCode = '';
+  private liveFrame?: number;
+  private liveTickCount = 0;
 
   protected onInit(): void {
     const p = this.params;
@@ -60,13 +66,40 @@ export class ChartForm extends ChildForm {
     this.renderShell();
     void this.boot();
 
-    const off = this.ctx.bus.onExcept(Topics.SymbolSelected, this.formKey, (msg: any) => {
+    this.track(this.ctx.bus.onExcept(Topics.SymbolSelected, this.formKey, (msg: any) => {
       if (!msg?.code || msg.code === this.code) return;
-      this.code = msg.code; this.name = msg.name ?? '';
+      this.clearRealtimeRegistration();
+      this.code = this.plainCode(msg.code);
+      this.name = msg.name ?? '';
       const inp = this.$<HTMLInputElement>('#cCode'); if (inp) inp.value = this.code;
+      const nm = this.$('#cName'); if (nm) nm.textContent = this.name;
       void this.load(false);
+    }));
+
+    this.track(this.ctx.bus.on(Topics.WsChanged, (p: any) => {
+      if (!p?.connected) {
+        this.quoteGroup = '';
+        this.quoteCode = '';
+        return;
+      }
+
+      if (this.bars.length) {
+        this.syncRealtimeRegistration();
+      }
+    }));
+
+    this.track(this.ctx.bus.on(Topics.RealtimeTick, (d: any) => {
+      if (String(d?.type ?? '') !== '0B') return;
+      this.onRealtimeTrade(d);
+    }));
+
+    this.track(() => {
+      this.clearRealtimeRegistration();
+      if (this.liveFrame !== undefined) {
+        cancelAnimationFrame(this.liveFrame);
+        this.liveFrame = undefined;
+      }
     });
-    this.track(off);
   }
 
   private renderShell(): void {
@@ -95,7 +128,11 @@ export class ChartForm extends ChildForm {
       </div>`);
 
     this.$('#cGo')?.addEventListener('click', () => {
-      this.code = (this.$<HTMLInputElement>('#cCode')!.value || '').trim();
+      const next = this.plainCode(
+        (this.$<HTMLInputElement>('#cCode')!.value || '').trim(),
+      );
+      if (next !== this.code) this.clearRealtimeRegistration();
+      this.code = next;
       void this.load(false);
     });
     this.$<HTMLInputElement>('#cCode')?.addEventListener('keydown', e => {
@@ -104,8 +141,10 @@ export class ChartForm extends ChildForm {
     this.$$('[data-p]').forEach(b => b.addEventListener('click', () => {
       const id = b.getAttribute('data-p') as PeriodId;
       const def = PERIODS.find(p => p.id === id)!;
+      this.clearRealtimeRegistration();
       this.period = def;
       this.scope = def.id === 'min' ? '5' : (def.scopes?.[0]?.v ?? '1');
+      this.bars = [];
       this.disposeChart();
       this.renderShell();
       void this.boot();
@@ -219,15 +258,25 @@ export class ChartForm extends ChildForm {
   }
 
   private async load(more: boolean): Promise<void> {
-    if (this.busy || !this.candles) return;
+    if (this.busy) {
+      if (!more) this.reloadPending = true;
+      return;
+    }
+    if (!this.candles) return;
     if (!/^[0-9A-Za-z_]{4,20}$/.test(this.code)) { this.status('종목코드를 확인하세요.'); return; }
     if (more && this.contYn !== 'Y') { this.status('더 불러올 과거 데이터가 없습니다.'); return; }
+
+    if (!more) {
+      this.clearRealtimeRegistration();
+      this.liveTickCount = 0;
+    }
 
     this.busy = true;
     this.status(more ? '이전 데이터 조회중…' : '조회중…');
 
+    const requestedCode = this.code;
     const def = this.period;
-    const body: Record<string, string> = { stk_cd: this.code, upd_stkpc_tp: this.upd };
+    const body: Record<string, string> = { stk_cd: requestedCode, upd_stkpc_tp: this.upd };
     if (def.scopes) body.tic_scope = this.scope;
     else body.base_dt = this.todayYmd();
 
@@ -237,6 +286,9 @@ export class ChartForm extends ChildForm {
         nextKey: more ? this.nextKey : undefined,
       });
       const data = this.payload(res);
+
+      if (requestedCode !== this.code || def !== this.period) return;
+
       // KiwoomClient.contYn 은 boolean 이다. 문자열로 정규화한다.
       this.contYn = res?.contYn ? 'Y' : '';
       this.nextKey = res?.nextKey ?? '';
@@ -255,10 +307,7 @@ export class ChartForm extends ChildForm {
       this.candles.setData(this.bars.map(b => ({
         time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
       })));
-      this.volume.setData(this.bars.map(b => ({
-        time: b.time, value: b.volume,
-        color: b.close >= b.open ? 'rgba(227,74,74,.45)' : 'rgba(63,127,214,.45)',
-      })));
+      this.volume.setData(this.bars.map(b => this.volumePoint(b)));
       this.ma5.setData(this.sma(5));
       this.ma20.setData(this.sma(20));
       this.ma60.setData(this.sma(60));
@@ -267,15 +316,247 @@ export class ChartForm extends ChildForm {
       const nm = data?.stk_nm ?? '';
       if (nm) { this.name = String(nm); const el = this.$('#cName'); if (el) el.textContent = this.name; }
       this.setTitle(`차트 ${this.code}${this.name ? ' ' + this.name : ''} · ${def.label}`);
-      this.status(`${this.bars.length}봉 · ${def.apiId}${this.contYn === 'Y' ? ' · 과거 데이터 더 있음' : ''}`);
+      this.status(`${this.bars.length}봉 · ${def.apiId}${this.contYn === 'Y' ? ' · 과거 데이터 더 있음' : ''} · 실시간 대기`);
       this.paintLegend(null);
 
+      this.syncRealtimeRegistration();
       this.ctx.bus.emit(Topics.SymbolSelected, { source: this.formKey, code: this.code, name: this.name });
     } catch (e: any) {
       this.status(`실패: ${e?.message ?? e}`);
     } finally {
       this.busy = false;
+
+      if (this.reloadPending) {
+        this.reloadPending = false;
+        void this.load(false);
+      }
     }
+  }
+
+  private plainCode(code: string): string {
+    return String(code ?? '').trim().replace(/^[A-Za-z]+/, '');
+  }
+
+  private clearRealtimeRegistration(): void {
+    const group = this.quoteGroup;
+    const code = this.quoteCode;
+
+    this.quoteGroup = '';
+    this.quoteCode = '';
+
+    if (group && code && this.ctx.rt.connected) {
+      this.ctx.rt.unregister(group, [code], ['0B']);
+    }
+  }
+
+  private syncRealtimeRegistration(): void {
+    const code = this.plainCode(this.code);
+
+    if (
+      this.quoteGroup
+      && this.quoteCode === code
+    ) {
+      return;
+    }
+
+    this.clearRealtimeRegistration();
+
+    if (
+      !code
+      || !this.ctx.rt.connected
+      || !this.bars.length
+    ) {
+      return;
+    }
+
+    this.quoteCode = code;
+    this.quoteGroup = this.ctx.rt.register([code], ['0B'], '1');
+  }
+
+  private onRealtimeTrade(d: any): void {
+    if (!this.quoteGroup || !this.candles) return;
+
+    const values = d?.values ?? {};
+    const code = this.plainCode(d?.item ?? values['9001'] ?? '');
+    if (!code || code !== this.quoteCode || code !== this.plainCode(this.code)) return;
+
+    const price = this.abs(values['10']);
+    if (!price) return;
+
+    const hhmmss = String(values['20'] ?? '').replace(/\D/g, '').padStart(6, '0').slice(-6);
+    const tradeQty = this.abs(values['15']);
+    const changed = this.applyRealtimeTrade(price, tradeQty, hhmmss, values);
+    if (!changed) return;
+
+    this.candles.update({
+      time: changed.time,
+      open: changed.open,
+      high: changed.high,
+      low: changed.low,
+      close: changed.close,
+    });
+    this.volume.update(this.volumePoint(changed));
+    this.paintLegend(null);
+    this.scheduleLiveIndicators();
+  }
+
+  private applyRealtimeTrade(
+    price: number,
+    tradeQty: number,
+    hhmmss: string,
+    values: any,
+  ): Bar | null {
+    if (!this.bars.length) return null;
+
+    if (this.period.id === 'min') {
+      const minutes = Math.max(1, Number(this.scope) || 1);
+      const time = this.liveIntradayTime(hhmmss, minutes);
+      return this.upsertIntradayBar(time, price, tradeQty);
+    }
+
+    if (this.period.id === 'tick') {
+      return this.upsertTickBar(hhmmss, price, tradeQty);
+    }
+
+    if (this.period.id === 'day') {
+      const time = this.todayIso();
+      const cumulativeVolume = this.abs(values['13']);
+      const open = this.abs(values['16']) || price;
+      const high = this.abs(values['17']) || price;
+      const low = this.abs(values['18']) || price;
+      const last = this.bars[this.bars.length - 1];
+
+      if (String(last.time) === time) {
+        last.open = open || last.open;
+        last.high = Math.max(last.high, high, price);
+        last.low = Math.min(last.low, low, price);
+        last.close = price;
+        last.volume = cumulativeVolume || last.volume + tradeQty;
+        return last;
+      }
+
+      const bar: Bar = {
+        time,
+        open,
+        high: Math.max(open, high, price),
+        low: Math.min(open, low, price),
+        close: price,
+        volume: cumulativeVolume || tradeQty,
+      };
+      this.bars.push(bar);
+      return bar;
+    }
+
+    // 주·월·년 봉은 현재 기간 봉의 시가를 보존하고,
+    // 당일 고저와 신규 체결만 기존 기간 봉에 반영한다.
+    const last = this.bars[this.bars.length - 1];
+    const dayHigh = this.abs(values['17']) || price;
+    const dayLow = this.abs(values['18']) || price;
+    last.high = Math.max(last.high, dayHigh, price);
+    last.low = Math.min(last.low, dayLow, price);
+    last.close = price;
+    last.volume += tradeQty;
+    return last;
+  }
+
+  private upsertIntradayBar(time: number, price: number, tradeQty: number): Bar | null {
+    const last = this.bars[this.bars.length - 1];
+    const lastTime = Number(last.time);
+
+    if (Number.isFinite(lastTime) && time < lastTime) return null;
+
+    if (lastTime === time) {
+      last.high = Math.max(last.high, price);
+      last.low = Math.min(last.low, price);
+      last.close = price;
+      last.volume += tradeQty;
+      return last;
+    }
+
+    const bar: Bar = {
+      time,
+      open: price,
+      high: price,
+      low: price,
+      close: price,
+      volume: tradeQty,
+    };
+    this.bars.push(bar);
+    return bar;
+  }
+
+  private upsertTickBar(hhmmss: string, price: number, tradeQty: number): Bar | null {
+    const scope = Math.max(1, Number(this.scope) || 1);
+    const last = this.bars[this.bars.length - 1];
+
+    if (this.liveTickCount === 0) {
+      let time = this.liveIntradayTime(hhmmss, 0);
+      const lastTime = Number(last.time);
+      if (Number.isFinite(lastTime) && time <= lastTime) time = lastTime + 1;
+
+      const bar: Bar = {
+        time,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: tradeQty,
+      };
+      this.bars.push(bar);
+      this.liveTickCount = 1 % scope;
+      return bar;
+    }
+
+    last.high = Math.max(last.high, price);
+    last.low = Math.min(last.low, price);
+    last.close = price;
+    last.volume += tradeQty;
+    this.liveTickCount = (this.liveTickCount + 1) % scope;
+    return last;
+  }
+
+  private liveIntradayTime(hhmmss: string, bucketMinutes: number): number {
+    const now = new Date(Date.now() + 9 * 3600_000);
+    const y = now.getUTCFullYear();
+    const mo = now.getUTCMonth();
+    const d = now.getUTCDate();
+    const h = Number(hhmmss.slice(0, 2)) || 0;
+    let mi = Number(hhmmss.slice(2, 4)) || 0;
+    const s = Number(hhmmss.slice(4, 6)) || 0;
+
+    if (bucketMinutes > 0) {
+      mi = Math.floor(mi / bucketMinutes) * bucketMinutes;
+    }
+
+    return Math.floor(
+      Date.UTC(y, mo, d, h, mi, bucketMinutes > 0 ? 0 : s) / 1000,
+    );
+  }
+
+  private scheduleLiveIndicators(): void {
+    if (this.liveFrame !== undefined) return;
+
+    this.liveFrame = requestAnimationFrame(() => {
+      this.liveFrame = undefined;
+      this.computeVolCap();
+      this.volume?.applyOptions({});
+      this.ma5?.setData(this.sma(5));
+      this.ma20?.setData(this.sma(20));
+      this.ma60?.setData(this.sma(60));
+      this.status(
+        `${this.bars.length}봉 · ${this.period.apiId} · 실시간 ${new Date().toLocaleTimeString('ko-KR')}`,
+      );
+    });
+  }
+
+  private volumePoint(b: Bar): any {
+    return {
+      time: b.time,
+      value: b.volume,
+      color: b.close >= b.open
+        ? 'rgba(227,74,74,.45)'
+        : 'rgba(63,127,214,.45)',
+    };
   }
 
   private sma(n: number): any[] {
@@ -344,6 +625,9 @@ export class ChartForm extends ChildForm {
   private status(s: string): void { const el = this.$('#cStatus'); if (el) el.textContent = s; }
   private todayYmd(): string {
     return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10).replace(/-/g, '');
+  }
+  private todayIso(): string {
+    return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
   }
 
   protected onVisibility(visible: boolean): void {
