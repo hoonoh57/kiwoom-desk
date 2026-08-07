@@ -39,7 +39,25 @@ function Get-GitOutput {
         throw "Git command failed (exit=$exitCode): git $joined"
     }
 
-    return @($output)
+    return $output
+}
+
+function Get-GitSingleLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]] $Arguments
+    )
+
+    $lines = @(
+        Get-GitOutput -Arguments $Arguments
+    )
+
+    if ($lines.Count -ne 1) {
+        $joined = $Arguments -join ' '
+        throw "Expected one line from: git $joined; actual=$($lines.Count)"
+    }
+
+    return ([string] $lines[0]).Trim()
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -51,10 +69,14 @@ try {
     Write-Host "repo=$repoRoot"
     Write-Host '============================================================'
 
-    Invoke-Native -FilePath 'git' -Arguments @(
+    $insideWorkTree = Get-GitSingleLine -Arguments @(
         'rev-parse',
         '--is-inside-work-tree'
     )
+
+    if ($insideWorkTree -ne 'true') {
+        throw "Not a Git working tree: $repoRoot"
+    }
 
     $dirtyBefore = @(
         Get-GitOutput -Arguments @(
@@ -144,19 +166,15 @@ try {
         'main'
     )
 
-    $localHead = (
-        Get-GitOutput -Arguments @(
-            'rev-parse',
-            'HEAD'
-        )
-    )[0].Trim()
+    $localHead = Get-GitSingleLine -Arguments @(
+        'rev-parse',
+        'HEAD'
+    )
 
-    $remoteHead = (
-        Get-GitOutput -Arguments @(
-            'rev-parse',
-            'origin/main'
-        )
-    )[0].Trim()
+    $remoteHead = Get-GitSingleLine -Arguments @(
+        'rev-parse',
+        'origin/main'
+    )
 
     if ($localHead -ne $remoteHead) {
         throw "Local HEAD ($localHead) does not match origin/main ($remoteHead)."
