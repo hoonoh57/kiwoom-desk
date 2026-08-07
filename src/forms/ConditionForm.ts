@@ -1,4 +1,4 @@
-﻿import { ChildForm } from './ChildForm';
+import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
 
 interface Cond { seq: string; name: string; }
@@ -11,7 +11,7 @@ const F: Record<string, string> = {
 };
 
 /** 표에 직접 찍지 않는 필드. 25 는 색상 판정용으로만 쓴다. */
-const HIDE = new Set(['25', '841', '843', '907']);
+const HIDE = new Set(['25', '841', '843', '907', 'jmcode']);
 
 /** 이 순서로 먼저 배치한다. 나머지는 뒤에 원래 순서대로 붙는다. */
 const ORDER = ['9001', '302', '10', '11', '12', '13', '16', '17', '18', '20'];
@@ -22,6 +22,9 @@ const ABS = new Set(['10', '16', '17', '18']);
 /** 우측 정렬할 숫자 필드 */
 const NUM = new Set(['10', '11', '12', '13', '16', '17', '18']);
 
+/** 주식체결(0B)에서 조건검색 그리드에 반영할 표준 필드 */
+const QUOTE_FIELDS = ['10', '11', '12', '13', '16', '17', '18', '20', '25'] as const;
+
 export class ConditionForm extends ChildForm {
   private conds: Cond[] = [];
   private sel = '';
@@ -29,6 +32,12 @@ export class ConditionForm extends ChildForm {
   private liveSeq = '';
   private busy = false;
   private events: string[] = [];
+  private selectedCode = '';
+
+  private quoteGroup = '';
+  private quoteCodes: string[] = [];
+  private snapshotTimer?: number;
+  private paintFrame?: number;
 
   protected onInit(): void {
     this.setTitle('조건검색');
@@ -36,12 +45,15 @@ export class ConditionForm extends ChildForm {
     void this.loadList();
 
     // WS LOGIN이 폼 오픈보다 늦을 수 있다.
-    // 연결이 끊기면 서버 측 실시간 등록도 유효하다고 볼 수 없으므로
-    // 로컬 등록 상태와 체크박스를 함께 초기화한다.
+    // 연결이 끊기면 서버 측 실시간 등록과 시세 구독도 유효하지 않으므로
+    // 로컬 상태와 체크박스를 함께 초기화한다.
     this.track(this.ctx.bus.on(Topics.WsChanged, (p: any) => {
       if (!p?.connected) {
         const wasLive = this.liveSeq !== '';
         this.liveSeq = '';
+        this.quoteGroup = '';
+        this.quoteCodes = [];
+        this.cancelScheduledSnapshot();
         this.syncLiveCheck();
 
         if (wasLive) {
@@ -55,37 +67,34 @@ export class ConditionForm extends ChildForm {
       }
     }));
 
-    // 조건검색 실시간 편입/이탈 이벤트.
-    // FID 841은 조건식 일련번호가 아니므로 선택 seq와 비교하지 않는다.
     this.track(this.ctx.bus.on(Topics.RealtimeTick, (d: any) => {
       if (!this.liveSeq) return;
 
       const v = d?.values ?? d ?? {};
       const io = String(v['843'] ?? '').trim();
 
-      if (!io) return;
+      if (io) {
+        this.onConditionMembership(d, v, io);
+        return;
+      }
 
-      const code = this.plain(String(v['9001'] ?? ''));
-      if (!code) return;
-
-      const tag =
-        io === 'I'
-          ? '편입'
-          : io === 'D'
-            ? '이탈'
-            : io;
-
-      this.events.unshift(
-        `${new Date().toLocaleTimeString('ko-KR')} [${tag}] ${code}`,
-      );
-
-      this.events = this.events.slice(0, 200);
-      this.paintEvents();
+      if (String(d?.type ?? '') === '0B') {
+        this.onRealtimeQuote(d, v);
+      }
     }));
 
     // ChildForm.dispose()/setParams()에서 호출된다.
     // 현재 콤보박스 값이 아니라 실제 등록된 조건식 번호를 해제한다.
     this.track(() => {
+      this.cancelScheduledSnapshot();
+
+      if (this.paintFrame !== undefined) {
+        cancelAnimationFrame(this.paintFrame);
+        this.paintFrame = undefined;
+      }
+
+      this.clearQuoteRegistration();
+
       const seq = this.liveSeq;
       this.liveSeq = '';
 
@@ -107,6 +116,7 @@ export class ConditionForm extends ChildForm {
         });
     });
   }
+
   private render(): void {
     this.html(`
       <div class="cnd-form">
@@ -203,6 +213,7 @@ export class ConditionForm extends ChildForm {
     const value = Number(s);
     return Number.isFinite(value) ? value : null;
   }
+
   /** 25(전일대비기호)로 등락 방향 판정. 없으면 11 의 부호로 대체. */
   private dir(r: any): number {
     const s = String(r?.['25'] ?? '').trim();
@@ -213,9 +224,197 @@ export class ConditionForm extends ChildForm {
     return n === null ? 0 : Math.sign(n);
   }
 
+  /**
+   * 일반 조건검색의 FID 12는 소수점 둘째 자리를 생략한 정수 문자열이다.
+   * 예: -00000130 → -1.30%. 실시간 주식체결(0B)은 -1.30처럼
+   * 실제 소수 문자열이므로 이 정규화는 snapshot 입력에만 적용한다.
+   */
+  private normalizeSnapshotRate(raw: unknown): unknown {
+    const text = String(raw ?? '').replace(/,/g, '').trim();
+    if (!text || text.includes('.')) return raw;
+    const value = this.toNum(text);
+    return value === null ? raw : String(value / 100);
+  }
+
   private normRows(data: any): any[] {
     if (!Array.isArray(data)) return [];
-    return data.map(r => (Array.isArray(r) ? { ...r } : r)).filter(Boolean);
+
+    return data
+      .map((raw: any) => {
+        if (!raw) return null;
+        const row = Array.isArray(raw) ? { ...raw } : { ...raw };
+
+        if (!row['9001'] && row.jmcode) {
+          row['9001'] = row.jmcode;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(row, '12')) {
+          row['12'] = this.normalizeSnapshotRate(row['12']);
+        }
+
+        return row;
+      })
+      .filter(Boolean);
+  }
+
+  private rowCode(row: any): string {
+    return this.plain(
+      String(row?.['9001'] ?? row?.jmcode ?? row?.stk_cd ?? ''),
+    );
+  }
+
+  private findRow(code: string): any | undefined {
+    return this.rows.find(row => this.rowCode(row) === code);
+  }
+
+  private scheduleRowsPaint(): void {
+    if (this.paintFrame !== undefined) return;
+
+    this.paintFrame = requestAnimationFrame(() => {
+      this.paintFrame = undefined;
+      this.paintRows();
+    });
+  }
+
+  private cancelScheduledSnapshot(): void {
+    if (this.snapshotTimer !== undefined) {
+      clearTimeout(this.snapshotTimer);
+      this.snapshotTimer = undefined;
+    }
+  }
+
+  private scheduleLiveSnapshot(): void {
+    this.cancelScheduledSnapshot();
+    const seq = this.liveSeq;
+    if (!seq) return;
+
+    this.snapshotTimer = window.setTimeout(() => {
+      this.snapshotTimer = undefined;
+      void this.refreshLiveSnapshot(seq);
+    }, 600);
+  }
+
+  private async refreshLiveSnapshot(seq: string): Promise<void> {
+    if (
+      !seq
+      || this.liveSeq !== seq
+      || !this.ctx.rt.connected
+    ) {
+      return;
+    }
+
+    try {
+      const snapshot: any =
+        await this.ctx.rt.conditionSearch(seq, '0');
+
+      this.assertOk(snapshot, `조건식 ${seq} 실시간 동기화`);
+
+      if (this.liveSeq !== seq) return;
+
+      this.rows = this.normRows(snapshot?.data);
+      this.syncQuoteRegistration();
+      this.paintRows();
+      this.info(`실시간 등록됨 · 조건식 ${seq} · ${this.rows.length}종목`);
+    } catch (e: any) {
+      this.ctx.log.warn(
+        `조건식 ${seq} 실시간 화면 동기화 실패: ${e?.message ?? e}`,
+      );
+    }
+  }
+
+  private onConditionMembership(d: any, v: any, io: string): void {
+    const code = this.plain(
+      String(v['9001'] ?? d?.item ?? ''),
+    );
+    if (!code) return;
+
+    if (io === 'I') {
+      let row = this.findRow(code);
+      if (!row) {
+        row = { '9001': code };
+        this.rows.push(row);
+      }
+      if (v['20'] !== undefined) row['20'] = v['20'];
+    } else if (io === 'D') {
+      this.rows = this.rows.filter(row => this.rowCode(row) !== code);
+      if (this.selectedCode === code) this.selectedCode = '';
+    }
+
+    const tag =
+      io === 'I'
+        ? '편입'
+        : io === 'D'
+          ? '이탈'
+          : io;
+
+    this.events.unshift(
+      `${new Date().toLocaleTimeString('ko-KR')} [${tag}] ${code}`,
+    );
+
+    this.events = this.events.slice(0, 200);
+    this.paintEvents();
+    this.scheduleRowsPaint();
+    this.scheduleLiveSnapshot();
+  }
+
+  private onRealtimeQuote(d: any, v: any): void {
+    const code = this.plain(
+      String(d?.item ?? v['9001'] ?? ''),
+    );
+    if (!code || !this.quoteCodes.includes(code)) return;
+
+    const row = this.findRow(code);
+    if (!row) return;
+
+    for (const field of QUOTE_FIELDS) {
+      if (v[field] !== undefined && String(v[field]).trim() !== '') {
+        row[field] = v[field];
+      }
+    }
+
+    this.scheduleRowsPaint();
+  }
+
+  private clearQuoteRegistration(): void {
+    const group = this.quoteGroup;
+    const codes = [...this.quoteCodes];
+
+    this.quoteGroup = '';
+    this.quoteCodes = [];
+
+    if (
+      group
+      && codes.length
+      && this.ctx.rt.connected
+    ) {
+      this.ctx.rt.unregister(group, codes, ['0B']);
+    }
+  }
+
+  private syncQuoteRegistration(): void {
+    const codes = Array.from(new Set(
+      this.rows.map(row => this.rowCode(row)).filter(Boolean),
+    )).sort().slice(0, 100);
+
+    const unchanged =
+      this.quoteGroup !== ''
+      && codes.length === this.quoteCodes.length
+      && codes.every((code, index) => code === this.quoteCodes[index]);
+
+    if (unchanged) return;
+
+    this.clearQuoteRegistration();
+
+    if (
+      !this.liveSeq
+      || !this.ctx.rt.connected
+      || !codes.length
+    ) {
+      return;
+    }
+
+    this.quoteCodes = codes;
+    this.quoteGroup = this.ctx.rt.register(codes, ['0B'], '1');
   }
 
   private async loadList(): Promise<void> {
@@ -289,6 +488,7 @@ export class ConditionForm extends ChildForm {
       this.info(`목록 조회 실패: ${e?.message ?? e}`);
     }
   }
+
   private async search(): Promise<void> {
     if (!this.sel) {
       this.info('조건식을 선택하세요.');
@@ -312,6 +512,10 @@ export class ConditionForm extends ChildForm {
       this.rows = this.normRows(m?.data);
       this.paintRows();
 
+      if (this.liveSeq === seq) {
+        this.syncQuoteRegistration();
+      }
+
       this.info(
         `${this.rows.length}종목 포착`
         + ` · 조건식 ${seq}`
@@ -325,6 +529,7 @@ export class ConditionForm extends ChildForm {
       this.syncLiveCheck();
     }
   }
+
   private async toggleLive(on: boolean): Promise<void> {
     if (this.busy) {
       this.syncLiveCheck();
@@ -345,6 +550,7 @@ export class ConditionForm extends ChildForm {
         const target = this.sel;
 
         if (this.liveSeq === target) {
+          this.syncQuoteRegistration();
           this.info(`이미 실시간 등록됨 · 조건식 ${target}`);
           return;
         }
@@ -360,6 +566,8 @@ export class ConditionForm extends ChildForm {
             `기존 실시간 조건식 ${previous} 해제`,
           );
 
+          this.clearQuoteRegistration();
+          this.cancelScheduledSnapshot();
           this.liveSeq = '';
         }
 
@@ -401,11 +609,13 @@ export class ConditionForm extends ChildForm {
               ? detailRows
               : fallbackRows;
 
+          this.syncQuoteRegistration();
           this.paintRows();
         } catch (e: any) {
           detailError = String(e?.message ?? e);
 
           this.rows = fallbackRows;
+          this.syncQuoteRegistration();
           this.paintRows();
 
           this.ctx.log.warn(
@@ -414,6 +624,7 @@ export class ConditionForm extends ChildForm {
             + detailError,
           );
         }
+
         // 조건식이 바뀌었으므로 이전 편입·이탈 기록과 혼합하지 않는다.
         this.events = [];
         this.paintEvents();
@@ -437,6 +648,8 @@ export class ConditionForm extends ChildForm {
 
         this.assertOk(m, `실시간 조건식 ${active} 해제`);
 
+        this.clearQuoteRegistration();
+        this.cancelScheduledSnapshot();
         this.liveSeq = '';
         this.info(`실시간 해제됨 · 조건식 ${active}`);
       }
@@ -448,9 +661,14 @@ export class ConditionForm extends ChildForm {
       this.syncLiveCheck();
     }
   }
+
   private colsOf(): string[] {
     const seen: string[] = [];
-    for (const r of this.rows) for (const k of Object.keys(r)) if (!seen.includes(k)) seen.push(k);
+    for (const r of this.rows) {
+      for (const k of Object.keys(r)) {
+        if (!seen.includes(k)) seen.push(k);
+      }
+    }
     const head = ORDER.filter(c => seen.includes(c));
     const rest = seen.filter(c => !ORDER.includes(c) && !HIDE.has(c));
     return [...head, ...rest];
@@ -485,6 +703,7 @@ export class ConditionForm extends ChildForm {
 
     return this.esc(v.toLocaleString('ko-KR'));
   }
+
   private paintRows(): void {
     const host = this.$('#kRows');
     if (!host) return;
@@ -510,6 +729,8 @@ export class ConditionForm extends ChildForm {
           ${this.rows.map((r, i) => {
             const d = this.dir(r);
             const tone = d > 0 ? 'up' : d < 0 ? 'dn' : '';
+            const code = this.rowCode(r);
+            const selected = code && code === this.selectedCode ? ' sel' : '';
 
             const cells = cols.map(c => {
               const cls = [
@@ -521,7 +742,7 @@ export class ConditionForm extends ChildForm {
             }).join('');
 
             return `
-              <tr data-i="${i}" class="clickable">
+              <tr data-i="${i}" class="clickable${selected}">
                 ${cells}
               </tr>`;
           }).join('')}
@@ -541,11 +762,11 @@ export class ConditionForm extends ChildForm {
         }
 
         const r = this.rows[index];
-        const code = this.plain(
-          String(r?.['9001'] ?? r?.stk_cd ?? ''),
-        );
+        const code = this.rowCode(r);
 
         if (!code) return;
+
+        this.selectedCode = code;
 
         this.$$('tr.clickable').forEach(x => {
           x.classList.remove('sel');
@@ -561,6 +782,7 @@ export class ConditionForm extends ChildForm {
       });
     });
   }
+
   private paintEvents(): void {
     const el = this.$('#kEv'); if (!el) return;
     el.innerHTML = this.events.length
