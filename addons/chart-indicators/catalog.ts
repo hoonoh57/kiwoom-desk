@@ -6,6 +6,7 @@ import type {
   IndicatorParams,
   IndicatorPlugin,
   IndicatorPluginModule,
+  IndicatorSeriesStyle,
 } from './types';
 
 const modules = import.meta.glob<IndicatorPluginModule>(
@@ -49,9 +50,11 @@ export function normalizeParams(
 
 export function createDefaultIndicatorState(): IndicatorChartState {
   const indicators: IndicatorInstanceConfig[] = [];
+  const ordinals = new Map<string, number>();
 
   for (const plugin of plugins.values()) {
     for (const item of plugin.defaultInstances ?? []) {
+      const ordinal = nextOrdinal(ordinals, plugin.id);
       indicators.push({
         instanceId: item.instanceId,
         indicatorId: plugin.id,
@@ -61,7 +64,7 @@ export function createDefaultIndicatorState(): IndicatorChartState {
           ...defaultParams(plugin),
           ...(item.params ?? {}),
         }),
-        style: item.style,
+        style: cloneStyle(item.style ?? paletteStyle(plugin, ordinal)),
       });
     }
   }
@@ -75,6 +78,7 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
   const input = raw as Record<string, unknown>;
   const rows = Array.isArray(input.indicators) ? input.indicators : [];
   const indicators: IndicatorInstanceConfig[] = [];
+  const ordinals = new Map<string, number>();
 
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
@@ -83,6 +87,7 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
     const instanceId = String(item.instanceId ?? '').trim();
     if (!indicatorId || !instanceId) continue;
 
+    const ordinal = nextOrdinal(ordinals, indicatorId);
     const plugin = plugins.get(indicatorId);
     const rawParams = isRecord(item.params) ? item.params : {};
     const fromVersion = Math.max(1, Math.trunc(Number(item.pluginVersion) || 1));
@@ -95,7 +100,9 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
         enabled: item.enabled !== false,
         params: primitiveParams(rawParams),
         pane: item.pane === 'own' ? 'own' : item.pane === 'main' ? 'main' : undefined,
-        style: isRecord(item.style) ? item.style as Record<string, Record<string, unknown>> : undefined,
+        style: isRecord(item.style)
+          ? cloneStyle(item.style as IndicatorSeriesStyle)
+          : undefined,
       });
       continue;
     }
@@ -105,6 +112,10 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
       migrated = plugin.migrateParams(migrated, fromVersion);
     }
 
+    const explicitStyle = isRecord(item.style)
+      ? item.style as IndicatorSeriesStyle
+      : undefined;
+
     indicators.push({
       instanceId,
       indicatorId,
@@ -112,11 +123,33 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
       enabled: item.enabled !== false,
       params: normalizeParams(plugin, migrated),
       pane: item.pane === 'own' ? 'own' : item.pane === 'main' ? 'main' : undefined,
-      style: isRecord(item.style) ? item.style as Record<string, Record<string, unknown>> : undefined,
+      style: cloneStyle(explicitStyle ?? paletteStyle(plugin, ordinal)),
     });
   }
 
   return { schemaVersion: 1, indicators };
+}
+
+function nextOrdinal(ordinals: Map<string, number>, id: string): number {
+  const current = ordinals.get(id) ?? 0;
+  ordinals.set(id, current + 1);
+  return current;
+}
+
+function paletteStyle(
+  plugin: IndicatorPlugin,
+  ordinal: number,
+): IndicatorSeriesStyle | undefined {
+  const palette = plugin.stylePalette;
+  if (!palette?.length) return undefined;
+  return palette[ordinal % palette.length];
+}
+
+function cloneStyle(style: IndicatorSeriesStyle | undefined): IndicatorSeriesStyle | undefined {
+  if (!style) return undefined;
+  return Object.fromEntries(
+    Object.entries(style).map(([outputId, options]) => [outputId, { ...options }]),
+  );
 }
 
 function normalizeParam(
