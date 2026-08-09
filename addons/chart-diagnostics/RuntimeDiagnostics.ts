@@ -16,7 +16,7 @@ export class RuntimeDiagnostics implements ChartExtension {
   private disposed = false;
   private renderFrame?: number;
 
-  constructor(private readonly context: ChartExtensionContext) {
+  constructor(context: ChartExtensionContext) {
     this.probe = new ChartRuntimeProbe(context.chart);
     this.probe.install();
 
