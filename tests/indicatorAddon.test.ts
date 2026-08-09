@@ -5,6 +5,7 @@ import smaPlugin from '../addons/chart-indicators/plugins/sma';
 import rsiPlugin from '../addons/chart-indicators/plugins/rsi';
 import obvPlugin from '../addons/chart-indicators/plugins/obv';
 import macdPlugin from '../addons/chart-indicators/plugins/macd';
+import superTrendPlugin from '../addons/chart-indicators/plugins/supertrend';
 import type { ChartBar } from '../src/chart/extensions';
 import type { IndicatorParams, IndicatorPlugin } from '../addons/chart-indicators/types';
 
@@ -20,12 +21,23 @@ function bar(time: number, close: number, volume = 1): ChartBar {
 }
 
 function sampleBars(count: number): ChartBar[] {
-  return Array.from({ length: count }, (_, i) =>
-    bar(i + 1, 100 + i * 1.7 + Math.sin(i / 3) * 4, 1000 + i * 37),
-  );
+  return Array.from({ length: count }, (_, i) => {
+    const close = 100 + i * 1.7 + Math.sin(i / 3) * 4;
+    return {
+      time: i + 1,
+      open: close - Math.sin(i) * 1.5,
+      high: close + 2 + Math.abs(Math.sin(i)) * 2,
+      low: close - 2 - Math.abs(Math.cos(i)) * 2,
+      close,
+      volume: 1000 + i * 37,
+    };
+  });
 }
 
-function lastPoint(data: Record<string, Array<{ time: any; value: number; color?: string }>>, key: string) {
+function lastPoint(
+  data: Record<string, Array<{ time: any; value: number; color?: string }>>,
+  key: string,
+) {
   const rows = data[key] ?? [];
   return rows.length ? rows[rows.length - 1] : null;
 }
@@ -38,7 +50,14 @@ function assertIncrementalParity(
   const calc = plugin.create(params);
   calc.reset(bars);
 
-  bars.push(bar(41, 172.5, 3100));
+  bars.push({
+    time: 41,
+    open: 168,
+    high: 175,
+    low: 165,
+    close: 172.5,
+    volume: 3100,
+  });
   const appended = calc.update(bars, 'append');
   const freshAfterAppend = plugin.create(params).reset(bars);
   for (const output of plugin.outputs) {
@@ -49,7 +68,14 @@ function assertIncrementalParity(
     );
   }
 
-  bars[bars.length - 1] = bar(41, 164.25, 3550);
+  bars[bars.length - 1] = {
+    time: 41,
+    open: 168,
+    high: 171,
+    low: 160,
+    close: 164.25,
+    volume: 3550,
+  };
   const replaced = calc.update(bars, 'replace');
   const freshAfterReplace = plugin.create(params).reset(bars);
   for (const output of plugin.outputs) {
@@ -131,6 +157,31 @@ test('MACD is an own-pane multi-output plugin and append/replace remain incremen
   assertIncrementalParity(macdPlugin, { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
 });
 
+test('SuperTrend is a main-pane overlay and append/replace remain incremental-parity safe', () => {
+  assert.ok(superTrendPlugin.outputs.every(x => x.pane === 'main'));
+  assert.deepEqual(superTrendPlugin.outputs.map(x => x.id), ['trend']);
+  assertIncrementalParity(superTrendPlugin, { atrPeriod: 14, multiplier: 2 });
+
+  const data = superTrendPlugin.create({ atrPeriod: 14, multiplier: 2 }).reset(sampleBars(40));
+  assert.ok(data.trend.length > 0);
+  assert.ok(data.trend.every(x => x.color === '#e34a4a' || x.color === '#3f7fd6'));
+});
+
+test('indicator JSON schema persists pane order and height with v1 migration boundary', async () => {
+  const types = await readFile(new URL('../addons/chart-indicators/types.ts', import.meta.url), 'utf8');
+  const host = await readFile(new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url), 'utf8');
+
+  assert.equal(types.includes('schemaVersion: 2'), true);
+  assert.equal(types.includes('paneHeight?: number'), true);
+  assert.equal(types.includes('order?: number'), true);
+  assert.equal(host.includes('kiwoom-desk.chart.indicators.v2'), true);
+  assert.equal(host.includes('kiwoom-desk.chart.indicators.v1'), true);
+  assert.equal(host.includes('getHeight'), true);
+  assert.equal(host.includes('setHeight'), true);
+  assert.equal(host.includes("data-action=\"move-up\""), true);
+  assert.equal(host.includes("data-action=\"move-down\""), true);
+});
+
 test('ChartForm keeps indicator names and calculations out of the base chart', async () => {
   const source = await readFile(new URL('../src/forms/ChartForm.ts', import.meta.url), 'utf8');
 
@@ -139,6 +190,7 @@ test('ChartForm keeps indicator names and calculations out of the base chart', a
   assert.equal(source.includes('ma60'), false);
   assert.equal(source.includes('smaPoint'), false);
   assert.equal(source.includes('단순 이동평균'), false);
+  assert.equal(source.includes('SuperTrend'), false);
   assert.equal(source.includes('createChartExtensions'), true);
 });
 
