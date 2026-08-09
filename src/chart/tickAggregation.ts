@@ -84,10 +84,11 @@ export function aggregateSyntheticTickBars<T extends OhlcvBar>(
         volume += bar.volume;
       }
 
+      const tradingDate = last.tradingDate ?? first.tradingDate;
       aggregated.unshift({
         ...first,
         time: last.time,
-        tradingDate: last.tradingDate ?? first.tradingDate,
+        ...(tradingDate ? { tradingDate } : {}),
         open: first.open,
         high,
         low,
