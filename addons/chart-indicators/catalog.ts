@@ -65,22 +65,28 @@ export function createDefaultIndicatorState(): IndicatorChartState {
           ...(item.params ?? {}),
         }),
         style: mergeStyle(paletteStyle(plugin, ordinal), item.style),
+        order: indicators.length,
       });
     }
   }
 
-  return { schemaVersion: 1, indicators };
+  return { schemaVersion: 2, indicators };
 }
 
 export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
   if (!raw || typeof raw !== 'object') return createDefaultIndicatorState();
 
   const input = raw as Record<string, unknown>;
-  const rows = Array.isArray(input.indicators) ? input.indicators : [];
+  const rawRows = Array.isArray(input.indicators) ? input.indicators : [];
+  const rows = rawRows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => requestedOrder(a.row, a.index) - requestedOrder(b.row, b.index));
+
   const indicators: IndicatorInstanceConfig[] = [];
   const ordinals = new Map<string, number>();
 
-  for (const row of rows) {
+  for (const entry of rows) {
+    const row = entry.row;
     if (!row || typeof row !== 'object') continue;
     const item = row as Record<string, unknown>;
     const indicatorId = String(item.indicatorId ?? '').trim();
@@ -91,6 +97,7 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
     const plugin = plugins.get(indicatorId);
     const rawParams = isRecord(item.params) ? item.params : {};
     const fromVersion = Math.max(1, Math.trunc(Number(item.pluginVersion) || 1));
+    const paneHeight = normalizedPaneHeight(item.paneHeight);
 
     if (!plugin) {
       indicators.push({
@@ -103,6 +110,8 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
         style: isRecord(item.style)
           ? cloneStyle(item.style as IndicatorSeriesStyle)
           : undefined,
+        order: indicators.length,
+        paneHeight,
       });
       continue;
     }
@@ -124,10 +133,24 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
       params: normalizeParams(plugin, migrated),
       pane: item.pane === 'own' ? 'own' : item.pane === 'main' ? 'main' : undefined,
       style: mergeStyle(paletteStyle(plugin, ordinal), explicitStyle),
+      order: indicators.length,
+      paneHeight,
     });
   }
 
-  return { schemaVersion: 1, indicators };
+  return { schemaVersion: 2, indicators };
+}
+
+function requestedOrder(row: unknown, fallback: number): number {
+  if (!row || typeof row !== 'object') return fallback;
+  const n = Number((row as Record<string, unknown>).order);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizedPaneHeight(value: unknown): number | undefined {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 30) return undefined;
+  return Math.min(2000, n);
 }
 
 function nextOrdinal(ordinals: Map<string, number>, id: string): number {
