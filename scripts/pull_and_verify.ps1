@@ -94,7 +94,7 @@ try {
 
     if (-not $SkipPull) {
         Write-Host ''
-        Write-Host '[1/8] Pulling origin/main with fast-forward only...'
+        Write-Host '[1/9] Pulling origin/main with fast-forward only...'
         Invoke-Native -FilePath 'git' -Arguments @(
             'pull',
             '--ff-only',
@@ -104,11 +104,11 @@ try {
     }
     else {
         Write-Host ''
-        Write-Host '[1/8] Pull skipped.'
+        Write-Host '[1/9] Pull skipped.'
     }
 
     Write-Host ''
-    Write-Host '[2/8] Checking dependencies...'
+    Write-Host '[2/9] Checking dependencies...'
 
     $needsInstall = $Install -or -not (Test-Path 'node_modules')
 
@@ -125,14 +125,21 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[3/8] Running tick aggregation tests...'
+    Write-Host '[3/9] Running tick aggregation tests...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'test:tick'
     )
 
     Write-Host ''
-    Write-Host '[4/8] Checking optional chart indicator addon...'
+    Write-Host '[4/9] Running Kiwoom REST rate-limit policy tests...'
+    Invoke-Native -FilePath 'npm' -Arguments @(
+        'run',
+        'test:api'
+    )
+
+    Write-Host ''
+    Write-Host '[5/9] Checking optional chart indicator addon...'
     if (Test-Path 'addons/chart-indicators/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @(
             'run',
@@ -144,7 +151,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[5/8] Checking optional chart runtime diagnostics addon...'
+    Write-Host '[6/9] Checking optional chart runtime diagnostics addon...'
     if (Test-Path 'addons/chart-diagnostics/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @(
             'run',
@@ -156,14 +163,14 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[6/8] Running production build...'
+    Write-Host '[7/9] Running production build...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'build'
     )
 
     Write-Host ''
-    Write-Host '[7/8] Checking whitespace and repository cleanliness...'
+    Write-Host '[8/9] Checking whitespace and repository cleanliness...'
     Invoke-Native -FilePath 'git' -Arguments @(
         'diff',
         '--check'
@@ -189,7 +196,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[8/8] Verifying local main against origin/main...'
+    Write-Host '[9/9] Verifying local main against origin/main...'
 
     Invoke-Native -FilePath 'git' -Arguments @(
         'fetch',
