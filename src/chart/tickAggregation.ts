@@ -93,6 +93,54 @@ export function aggregateSyntheticTickBars<T extends OhlcvBar>(
   return out;
 }
 
+/**
+ * 1틱 원본의 최신 구간과 현재 표시 봉의 OHLCV를 맞춰
+ * 현재 봉 안에 이미 포함된 실제 체결 개수를 추론한다.
+ *
+ * 동일 초에 여러 체결이 있어도 timestamp가 아니라 OHLCV 전체를
+ * 비교하므로 단순 시간 비교보다 안정적이다. 반환값 0은 현재 봉이
+ * 정확히 scope개 체결로 완료돼 다음 체결이 새 봉을 시작해야 함을 뜻한다.
+ */
+export function inferTickProgress<T extends OhlcvBar>(
+  oneTickBars: readonly T[],
+  target: OhlcvBar,
+  scope: string | number,
+): number | null {
+  const maxTicks = Math.max(1, Math.trunc(Number(scope) || 1));
+  if (!oneTickBars.length) return null;
+
+  const ticks = oneTickBars.slice(-maxTicks);
+  const newest = ticks[ticks.length - 1];
+  if (!sameNumber(newest.close, target.close)) return null;
+
+  let high = Number.NEGATIVE_INFINITY;
+  let low = Number.POSITIVE_INFINITY;
+  let volume = 0;
+
+  for (let count = 1; count <= ticks.length; count++) {
+    const bar = ticks[ticks.length - count];
+    high = Math.max(high, bar.high);
+    low = Math.min(low, bar.low);
+    volume += bar.volume;
+
+    if (
+      sameNumber(bar.open, target.open)
+      && sameNumber(newest.close, target.close)
+      && sameNumber(high, target.high)
+      && sameNumber(low, target.low)
+      && sameNumber(volume, target.volume)
+    ) {
+      return count % maxTicks;
+    }
+  }
+
+  return null;
+}
+
+function sameNumber(a: number, b: number): boolean {
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-9;
+}
+
 function sessionKey(time: any): string {
   if (typeof time === 'number' && Number.isFinite(time)) {
     return new Date(Math.trunc(time) * 1000).toISOString().slice(0, 10);
