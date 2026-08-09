@@ -42,7 +42,7 @@ indicator 구현은 기본 `src/` 트리 밖에 있으므로, import가 제거�
    - 새 봉이 생성된 경우
 
 실시간 경로에서 ChartForm은 indicator 전체 재계산을 수행하지 않는다.
-각 plugin calculator가 자신의 마지막 상태만 갱신하도록 구현한다.
+각 plugin calculator가 자신의 마지막 상태만 갱신한다. RSI와 MACD처럼 누적 상태가 필요한 지표는 이전 봉 checkpoint에서 현재 마지막 봉만 다시 계산하여 진행봉 `replace`가 누적 상태를 오염시키지 않게 한다.
 
 ## 파일 구조
 
@@ -56,6 +56,9 @@ addons/chart-indicators/
   indicator.css
   plugins/
     sma.ts
+    rsi.ts
+    obv.ts
+    macd.ts
 ```
 
 `catalog.ts`는 `plugins/*.ts`를 `import.meta.glob`으로 자동 발견한다.
@@ -72,6 +75,7 @@ addons/chart-indicators/
 - `label`: UI 이름
 - `parameters`: 자동 파라미터 UI schema
 - `outputs`: line/histogram 출력과 main/own pane 위치
+- `stylePalette`: 저장된 style이 없는 동일 지표 인스턴스에 순서대로 배정할 기본 색상/스타일
 - `defaultInstances`: 최초 기본 구성에 포함할 인스턴스
 - `create(params)`: 계산 runtime 생성
 - `migrateParams`: 구버전 JSON 파라미터 마이그레이션(선택)
@@ -117,25 +121,40 @@ kiwoom-desk.chart.indicators.v1
 플러그인이 현재 설치돼 있지 않은 `indicatorId`도 JSON 설정에서 삭제하지 않고 보존한다.
 나중에 동일 id의 플러그인이 다시 설치되면 설정을 재사용할 수 있다.
 
-## 현재 기본 구성
+## 현재 지원 지표
 
-기존 ChartForm에 하드코딩돼 있던 MA5/20/60은 `addons/chart-indicators/plugins/sma.ts`로 이동했다.
-최초 저장값이 없을 때 다음 세 인스턴스가 자동 생성된다.
+### SMA
 
-- SMA 5 / close
-- SMA 20 / close
-- SMA 60 / close
+- main pane overlay
+- 기간 변경
+- 기준값: close/open/high/low/HL2/HLC3/OHLC4
+- 기존 MA5/20/60 기본값 유지
+- style이 없는 과거 JSON도 인스턴스 순서에 따라 서로 다른 색상을 자동 보충
 
-기존 선 색도 default instance style에 보존한다.
+### RSI
+
+- own pane
+- Wilder RSI
+- 기간, 과매수, 과매도 파라미터
+- RSI line + upper/lower reference line
+- 실시간 append/replace 증분 계산
+
+### OBV
+
+- own pane
+- 상승봉 거래량 가산, 하락봉 거래량 차감
+- 실시간 append/replace 증분 계산
+
+### MACD
+
+- own pane
+- Fast EMA / Slow EMA / Signal 파라미터
+- MACD line + Signal line + 양/음 histogram + zero line
+- 실시간 append/replace 증분 계산
 
 ## 파라미터 UI
 
 IndicatorHost는 plugin `parameters` schema를 읽어 number/integer/select/boolean 입력을 자동 생성한다.
-SMA는 현재 다음을 지원한다.
-
-- 기간
-- 기준값: close/open/high/low/HL2/HLC3/OHLC4
-
 파라미터를 바꾸면 설정 JSON을 즉시 저장하고 열린 다른 차트에도 같은 구성을 동기화한다.
 
 ## JSON UI
@@ -163,8 +182,14 @@ SMA는 현재 다음을 지원한다.
 `tests/indicatorAddon.test.ts`에서 다음을 확인한다.
 
 - 기존 MA5/20/60 default parity
+- SMA 기본 3개 색상 상이
 - SMA 전체 계산과 append/replace 증분값 일치
-- ChartForm에 SMA/MA 계산 하드코딩이 다시 들어오지 않음
+- RSI/OBV/MACD가 own pane 출력인지 확인
+- RSI/OBV/MACD reset 결과와 append/replace 증분 결과 parity
+- RSI 상승 데이터 100 확인
+- OBV 기본 누적 규칙 확인
+- MACD multi-output 계약 확인
+- ChartForm에 지표 계산 하드코딩이 다시 들어오지 않음
 - main.ts의 선택적 add-on 등록 경계 유지
 
 `pull_and_verify.ps1`은 tick aggregation test를 실행하고, `addons/chart-indicators/register.ts`가 존재할 때 indicator add-on test도 실행한 뒤 production build를 수행한다.
