@@ -67,7 +67,8 @@ function lastBand(
 
 function createCalculator(params: IndicatorParams): IndicatorCalculator {
   const period = Math.max(1, Math.trunc(Number(params.period) || 20));
-  const multiplier = Math.max(0, Number(params.multiplier) || 2);
+  const rawMultiplier = Number(params.multiplier);
+  const multiplier = Math.max(0, Number.isFinite(rawMultiplier) ? rawMultiplier : 2);
   const source = String(params.source ?? 'close');
 
   const rebuild = (bars: readonly ChartBar[]): IndicatorOutputData => {
@@ -104,7 +105,12 @@ function createCalculator(params: IndicatorParams): IndicatorCalculator {
 
     update(bars): IndicatorOutputUpdate {
       const point = lastBand(bars, period, multiplier, source);
-      return point ?? { basis: null, upper: null, lower: null };
+      if (!point) return { basis: null, upper: null, lower: null };
+      return {
+        basis: point.basis,
+        upper: point.upper,
+        lower: point.lower,
+      };
     },
   };
 }
