@@ -109,11 +109,13 @@ export class RuntimeDiagnostics implements ChartExtension {
     const violation = snapshot.barsReset > 0 || snapshot.setData > 0;
     const status = !snapshot.measuring
       ? 'IDLE'
-      : violation
-        ? 'RESET'
-        : liveBars > 0
-          ? 'PASS'
-          : 'WAIT';
+      : snapshot.patchFailures > 0
+        ? 'PATCH'
+        : violation
+          ? 'RESET'
+          : liveBars > 0
+            ? 'PASS'
+            : 'WAIT';
 
     this.badge.textContent = status;
     this.badge.dataset.status = status.toLowerCase();
