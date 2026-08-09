@@ -3,6 +3,9 @@ import 'dockview-core/dist/styles/dockview.css';
 import '@vscode/codicons/dist/codicon.css';
 import './styles/layout.css';
 
+// 선택적 차트 추가기능. 이 한 줄을 제거하면 기본 차트만 남는다.
+import './chart-addons/indicators/register';
+
 import { AppContext } from './core/context';
 import { Workbench } from './shell/Workbench';
 
