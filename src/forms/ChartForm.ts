@@ -4,6 +4,7 @@ import {
   CHART_TICK_SCOPES,
   TICK_SOURCE_SCOPE,
   aggregateSyntheticTickBars,
+  inferTickProgress,
   isSyntheticTickScope,
   requestTickScope,
   syntheticTickFactor,
@@ -76,6 +77,7 @@ export class ChartForm extends ChildForm {
   private quoteCode = '';
   private liveFrame?: number;
   private liveTickCount = 0;
+  private liveTickSynced = false;
 
   protected onInit(): void {
     const p = this.params;
@@ -338,6 +340,7 @@ export class ChartForm extends ChildForm {
     if (!more) {
       this.clearRealtimeRegistration();
       this.liveTickCount = 0;
+      this.liveTickSynced = false;
       this.sourceTickBars = [];
       this.syntheticLiveBars = [];
     }
@@ -399,6 +402,12 @@ export class ChartForm extends ChildForm {
         if (el) el.textContent = this.name;
       }
 
+      if (!more && def.id === 'tick' && this.bars.length) {
+        this.status(`틱 경계 동기화중… · ${this.periodCaption(def, requestedScope)}`);
+        this.liveTickSynced = await this.bootstrapTickProgress(requestedCode, requestedScope);
+        if (requestedCode !== this.code || def !== this.period || requestedScope !== this.scope) return;
+      }
+
       this.setTitle(`차트 ${this.code}${this.name ? ' ' + this.name : ''} · ${this.periodCaption(def, requestedScope)}`);
       this.status(this.loadedStatus(def, requestedScope, syntheticTicks));
       this.paintLegend(null);
@@ -418,6 +427,69 @@ export class ChartForm extends ChildForm {
         void this.load(false);
       }
     }
+  }
+
+  private async bootstrapTickProgress(code: string, scope: string): Promise<boolean> {
+    const target = this.bars[this.bars.length - 1];
+    if (!target) return false;
+
+    if (isSyntheticTickScope(scope)) {
+      // 더보기로 30틱 원본을 다시 조립해도 현재 실시간 봉이 우선하도록 overlay를 보존한다.
+      this.syntheticLiveBars = [target];
+    }
+
+    try {
+      const oneTickBars = await this.fetchRecentOneTickBars(code, Math.max(1, Number(scope) || 1));
+      if (code !== this.code || this.period.id !== 'tick' || scope !== this.scope) return false;
+
+      const progress = inferTickProgress(oneTickBars, target, scope);
+      if (progress === null) {
+        this.liveTickCount = 0;
+        return false;
+      }
+
+      this.liveTickCount = progress;
+      return true;
+    } catch {
+      this.liveTickCount = 0;
+      return false;
+    }
+  }
+
+  private async fetchRecentOneTickBars(code: string, maxTicks: number): Promise<Bar[]> {
+    const tickDef = PERIODS.find(p => p.id === 'tick')!;
+    const wanted = Math.max(1, Math.trunc(maxTicks));
+    let result: Bar[] = [];
+    let contYn = '';
+    let nextKey = '';
+    let pages = 0;
+
+    do {
+      const res: any = await this.ctx.api.call('ka10079', '/api/dostk/chart', {
+        stk_cd: code,
+        tic_scope: '1',
+        upd_stkpc_tp: this.upd,
+      }, {
+        contYn: contYn === 'Y' ? 'Y' : undefined,
+        nextKey: contYn === 'Y' ? nextKey : undefined,
+      });
+      const data = this.payload(res);
+
+      if (data?.return_code !== undefined && data.return_code !== 0) {
+        throw new Error(`1틱 동기화 rc=${data.return_code} ${data.return_msg ?? ''}`);
+      }
+
+      const rows: any[] = data?.[tickDef.listKey] ?? [];
+      const parsed = rows.map(r => this.toBar(r, tickDef)).filter(Boolean) as Bar[];
+      const page = this.toChronologicalPage(parsed);
+      result = [...page, ...result];
+
+      contYn = res?.contYn ? 'Y' : '';
+      nextKey = res?.nextKey ?? '';
+      pages++;
+    } while (result.length < wanted && contYn === 'Y' && pages < 8);
+
+    return result.slice(-wanted);
   }
 
   private refreshSeries(fit: boolean): void {
@@ -440,7 +512,10 @@ export class ChartForm extends ChildForm {
     const source = syntheticTicks
       ? ` · ${TICK_SOURCE_SCOPE}틱×${syntheticTickFactor(scope)} 조립`
       : '';
-    return `${this.bars.length}봉 · ${this.periodCaption(def, scope)} · ${def.apiId}${source}${this.contYn === 'Y' ? ' · 과거 데이터 더 있음' : ''} · 실시간 대기`;
+    const tickSync = def.id === 'tick'
+      ? (this.liveTickSynced ? ' · 틱경계 동기화' : ' · 틱경계 미확정')
+      : '';
+    return `${this.bars.length}봉 · ${this.periodCaption(def, scope)} · ${def.apiId}${source}${tickSync}${this.contYn === 'Y' ? ' · 과거 데이터 더 있음' : ''} · 실시간 대기`;
   }
 
   private periodCaption(def: PeriodDef, scope = this.scope): string {
@@ -453,6 +528,7 @@ export class ChartForm extends ChildForm {
     this.sourceTickBars = [];
     this.syntheticLiveBars = [];
     this.liveTickCount = 0;
+    this.liveTickSynced = false;
   }
 
   private plainCode(code: string): string {
@@ -643,17 +719,22 @@ export class ChartForm extends ChildForm {
 
     this.liveFrame = requestAnimationFrame(() => {
       this.liveFrame = undefined;
-      this.computeVolCap();
-      this.volume?.applyOptions({});
-      this.ma5?.setData(this.sma(5));
-      this.ma20?.setData(this.sma(20));
-      this.ma60?.setData(this.sma(60));
+
+      const p5 = this.smaPoint(5);
+      const p20 = this.smaPoint(20);
+      const p60 = this.smaPoint(60);
+      if (p5) this.ma5?.update(p5);
+      if (p20) this.ma20?.update(p20);
+      if (p60) this.ma60?.update(p60);
 
       const synthetic = this.period.id === 'tick' && isSyntheticTickScope(this.scope)
         ? ` · ${TICK_SOURCE_SCOPE}틱 조립`
         : '';
+      const tickSync = this.period.id === 'tick'
+        ? (this.liveTickSynced ? ' · 경계동기화' : ' · 경계미확정')
+        : '';
       this.status(
-        `${this.bars.length}봉 · ${this.periodCaption(this.period)} · ${this.period.apiId}${synthetic} · 실시간 ${new Date().toLocaleTimeString('ko-KR')}`,
+        `${this.bars.length}봉 · ${this.periodCaption(this.period)} · ${this.period.apiId}${synthetic}${tickSync} · 실시간 ${new Date().toLocaleTimeString('ko-KR')}`,
       );
     });
   }
@@ -679,6 +760,18 @@ export class ChartForm extends ChildForm {
       }
     }
     return out;
+  }
+
+  private smaPoint(n: number): { time: any; value: number } | null {
+    if (this.bars.length < n) return null;
+
+    let sum = 0;
+    for (let i = this.bars.length - n; i < this.bars.length; i++) {
+      sum += this.bars[i].close;
+    }
+
+    const last = this.bars[this.bars.length - 1];
+    return { time: last.time, value: +(sum / n).toFixed(2) };
   }
 
   private toBar(r: any, def: PeriodDef): Bar | null {
