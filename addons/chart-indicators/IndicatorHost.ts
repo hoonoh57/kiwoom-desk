@@ -73,7 +73,6 @@ export class IndicatorHost implements ChartExtension {
     this.panel.addEventListener('change', this.onPanelChange);
     window.addEventListener(STATE_EVENT, this.onExternalState as EventListener);
     window.addEventListener('pointerup', this.onPaneInteractionEnd);
-    window.addEventListener('pagehide', this.onPageHide);
 
     this.rebuild();
     this.renderPanel();
@@ -113,8 +112,6 @@ export class IndicatorHost implements ChartExtension {
     if (this.disposed) return;
     this.disposed = true;
 
-    this.capturePaneHeights();
-    this.persistState(false);
     if (this.paneCaptureFrame !== undefined) cancelAnimationFrame(this.paneCaptureFrame);
 
     this.button.removeEventListener('click', this.onToggle);
@@ -122,7 +119,6 @@ export class IndicatorHost implements ChartExtension {
     this.panel.removeEventListener('change', this.onPanelChange);
     window.removeEventListener(STATE_EVENT, this.onExternalState as EventListener);
     window.removeEventListener('pointerup', this.onPaneInteractionEnd);
-    window.removeEventListener('pagehide', this.onPageHide);
     this.clearRuntimes();
     this.root.remove();
   }
@@ -132,20 +128,18 @@ export class IndicatorHost implements ChartExtension {
     this.renderPanel();
   };
 
-  private readonly onPaneInteractionEnd = (): void => {
+  private readonly onPaneInteractionEnd = (event: PointerEvent): void => {
     if (this.disposed || this.paneCaptureFrame !== undefined) return;
+    const chartElement = this.context.chart.chartElement?.();
+    const target = event.target;
+    if (!chartElement || !(target instanceof Node) || !chartElement.contains(target)) return;
+
     this.paneCaptureFrame = requestAnimationFrame(() => {
       this.paneCaptureFrame = undefined;
       if (!this.capturePaneHeights()) return;
       this.persistState();
       if (this.opened) this.renderPanel();
     });
-  };
-
-  private readonly onPageHide = (): void => {
-    if (this.disposed) return;
-    this.capturePaneHeights();
-    this.persistState(false);
   };
 
   private readonly onPanelClick = (event: Event): void => {
@@ -243,7 +237,6 @@ export class IndicatorHost implements ChartExtension {
   private readonly onExternalState = (event: CustomEvent<StateEventDetail>): void => {
     const detail = event.detail;
     if (!detail || detail.source === this.hostId || this.disposed) return;
-    this.capturePaneHeights();
     this.state = normalizeIndicatorState(detail.state);
     this.rebuild();
     this.setPanelMessage('다른 차트에서 변경한 지표 구성과 pane 레이아웃을 동기화했습니다.');
@@ -371,8 +364,10 @@ export class IndicatorHost implements ChartExtension {
     for (const runtime of this.runtimes) {
       if (!runtime.pane || runtime.failed) continue;
       try {
-        const height = Math.max(30, Math.round(Number(runtime.pane.getHeight?.()) || 0));
-        if (height < 30 || runtime.config.paneHeight === height) continue;
+        const raw = Number(runtime.pane.getHeight?.());
+        if (!Number.isFinite(raw) || raw < 30) continue;
+        const height = Math.round(raw);
+        if (runtime.config.paneHeight === height) continue;
         runtime.config.paneHeight = height;
         changed = true;
       } catch {
