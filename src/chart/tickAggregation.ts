@@ -1,5 +1,7 @@
 export interface OhlcvBar {
   time: any;
+  /** 공급자 원본에서 보존한 거래 세션 날짜(YYYY-MM-DD). VWAP 세션 reset에 사용한다. */
+  tradingDate?: string;
   open: number;
   high: number;
   low: number;
@@ -60,9 +62,9 @@ export function aggregateSyntheticTickBars<T extends OhlcvBar>(
 
   let start = 0;
   while (start < source.length) {
-    const day = sessionKey(source[start].time);
+    const day = sessionKey(source[start]);
     let end = start + 1;
-    while (end < source.length && sessionKey(source[end].time) === day) end++;
+    while (end < source.length && sessionKey(source[end]) === day) end++;
 
     const dayBars = source.slice(start, end);
     const aggregated: T[] = [];
@@ -85,6 +87,7 @@ export function aggregateSyntheticTickBars<T extends OhlcvBar>(
       aggregated.unshift({
         ...first,
         time: last.time,
+        tradingDate: last.tradingDate ?? first.tradingDate,
         open: first.open,
         high,
         low,
@@ -154,7 +157,11 @@ function sameNumber(a: number, b: number): boolean {
   return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-9;
 }
 
-function sessionKey(time: any): string {
+function sessionKey(bar: OhlcvBar): string {
+  const explicit = String(bar.tradingDate ?? '').trim();
+  if (explicit) return explicit;
+
+  const time = bar.time;
   if (typeof time === 'number' && Number.isFinite(time)) {
     return new Date(Math.trunc(time) * 1000).toISOString().slice(0, 10);
   }
