@@ -2,17 +2,63 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import smaPlugin from '../addons/chart-indicators/plugins/sma';
+import rsiPlugin from '../addons/chart-indicators/plugins/rsi';
+import obvPlugin from '../addons/chart-indicators/plugins/obv';
+import macdPlugin from '../addons/chart-indicators/plugins/macd';
 import type { ChartBar } from '../src/chart/extensions';
+import type { IndicatorParams, IndicatorPlugin } from '../addons/chart-indicators/types';
 
-function bar(time: number, close: number): ChartBar {
+function bar(time: number, close: number, volume = 1): ChartBar {
   return {
     time,
     open: close,
     high: close,
     low: close,
     close,
-    volume: 1,
+    volume,
   };
+}
+
+function sampleBars(count: number): ChartBar[] {
+  return Array.from({ length: count }, (_, i) =>
+    bar(i + 1, 100 + i * 1.7 + Math.sin(i / 3) * 4, 1000 + i * 37),
+  );
+}
+
+function lastPoint(data: Record<string, Array<{ time: any; value: number; color?: string }>>, key: string) {
+  const rows = data[key] ?? [];
+  return rows.length ? rows[rows.length - 1] : null;
+}
+
+function assertIncrementalParity(
+  plugin: IndicatorPlugin,
+  params: IndicatorParams,
+): void {
+  const bars = sampleBars(40);
+  const calc = plugin.create(params);
+  calc.reset(bars);
+
+  bars.push(bar(41, 172.5, 3100));
+  const appended = calc.update(bars, 'append');
+  const freshAfterAppend = plugin.create(params).reset(bars);
+  for (const output of plugin.outputs) {
+    assert.deepEqual(
+      appended[output.id] ?? null,
+      lastPoint(freshAfterAppend, output.id),
+      `${plugin.id}/${output.id} append parity`,
+    );
+  }
+
+  bars[bars.length - 1] = bar(41, 164.25, 3550);
+  const replaced = calc.update(bars, 'replace');
+  const freshAfterReplace = plugin.create(params).reset(bars);
+  for (const output of plugin.outputs) {
+    assert.deepEqual(
+      replaced[output.id] ?? null,
+      lastPoint(freshAfterReplace, output.id),
+      `${plugin.id}/${output.id} replace parity`,
+    );
+  }
 }
 
 test('SMA plugin preserves the former MA5/20/60 defaults', () => {
@@ -21,6 +67,16 @@ test('SMA plugin preserves the former MA5/20/60 defaults', () => {
     .sort((a, b) => a - b);
 
   assert.deepEqual(periods, [5, 20, 60]);
+});
+
+test('SMA plugin has distinct fallback colors for existing saved instances', () => {
+  const colors = (smaPlugin.stylePalette ?? [])
+    .slice(0, 3)
+    .map(style => String(style.value?.color ?? ''));
+
+  assert.equal(colors.length, 3);
+  assert.equal(new Set(colors).size, 3);
+  assert.ok(colors.every(Boolean));
 });
 
 test('SMA plugin reset and incremental update agree', () => {
@@ -46,6 +102,33 @@ test('SMA plugin reset and incremental update agree', () => {
   bars[bars.length - 1].high = 80;
   bars[bars.length - 1].low = 80;
   assert.deepEqual(calc.update(bars, 'replace').value, { time: 5, value: 50 });
+});
+
+test('RSI is an own-pane plugin and append/replace remain incremental-parity safe', () => {
+  assert.ok(rsiPlugin.outputs.every(x => x.pane === 'own'));
+  assertIncrementalParity(rsiPlugin, { period: 14, upper: 70, lower: 30 });
+
+  const rising = Array.from({ length: 15 }, (_, i) => bar(i + 1, 100 + i));
+  const result = rsiPlugin.create({ period: 14, upper: 70, lower: 30 }).reset(rising);
+  assert.equal(result.rsi[result.rsi.length - 1]?.value, 100);
+});
+
+test('OBV is an own-pane plugin and append/replace remain incremental-parity safe', () => {
+  assert.ok(obvPlugin.outputs.every(x => x.pane === 'own'));
+  assertIncrementalParity(obvPlugin, {});
+
+  const bars = [bar(1, 10, 100), bar(2, 11, 200), bar(3, 9, 50), bar(4, 9, 80)];
+  const result = obvPlugin.create({}).reset(bars);
+  assert.deepEqual(result.obv.map(x => x.value), [0, 200, 150, 150]);
+});
+
+test('MACD is an own-pane multi-output plugin and append/replace remain incremental-parity safe', () => {
+  assert.ok(macdPlugin.outputs.every(x => x.pane === 'own'));
+  assert.deepEqual(
+    macdPlugin.outputs.map(x => x.id),
+    ['macd', 'signal', 'histogram', 'zero'],
+  );
+  assertIncrementalParity(macdPlugin, { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
 });
 
 test('ChartForm keeps indicator names and calculations out of the base chart', async () => {
