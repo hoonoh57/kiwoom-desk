@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import smaPlugin from '../src/chart-addons/indicators/plugins/sma';
+import smaPlugin from '../addons/chart-indicators/plugins/sma';
 import type { ChartBar } from '../src/chart/extensions';
 
 function bar(time: number, close: number): ChartBar {
@@ -59,9 +59,9 @@ test('ChartForm keeps indicator names and calculations out of the base chart', a
   assert.equal(source.includes('createChartExtensions'), true);
 });
 
-test('indicator addon is enabled by one removable side-effect import', async () => {
+test('indicator addon is enabled by one removable dynamic import', async () => {
   const source = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
-  const matches = source.match(/chart-addons\/indicators\/register/g) ?? [];
+  const matches = source.match(/addons\/chart-indicators\/register/g) ?? [];
 
   assert.equal(matches.length, 1);
 });
