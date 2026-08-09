@@ -3,11 +3,12 @@ import 'dockview-core/dist/styles/dockview.css';
 import '@vscode/codicons/dist/codicon.css';
 import './styles/layout.css';
 
-// 선택적 차트 추가기능. 이 한 줄을 제거하면 기본 차트만 남는다.
-import './chart-addons/indicators/register';
-
 import { AppContext } from './core/context';
 import { Workbench } from './shell/Workbench';
+
+// 선택적 차트 추가기능. 이 한 줄을 제거하면 기본 차트만 남는다.
+await import('./chart-addons/indicators/register')
+  .catch(e => console.warn('차트 지표 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
 
 const host = document.getElementById('workbench');
 if (!host) throw new Error('#workbench 엘리먼트를 찾을 수 없습니다.');
