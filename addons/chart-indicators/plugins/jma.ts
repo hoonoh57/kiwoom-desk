@@ -117,10 +117,21 @@ function step(
   };
 }
 
+function integerParam(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const parsed = Number(value);
+  const integer = Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
+  return Math.max(minimum, Math.min(maximum, integer));
+}
+
 function createCalculator(params: IndicatorParams): IndicatorCalculator {
-  const period = Math.max(1, Math.min(10_000, Math.trunc(Number(params.period) || 14)));
-  const phase = Math.max(-100, Math.min(100, Math.trunc(Number(params.phase) || 0)));
-  const power = Math.max(1, Math.min(10_000, Math.trunc(Number(params.power) || 2)));
+  const period = integerParam(params.period, 14, 1, 10_000);
+  const phase = integerParam(params.phase, 50, -100, 100);
+  const power = integerParam(params.power, 2, 1, 10_000);
   let states: JmaState[] = [];
 
   const rebuild = (bars: readonly ChartBar[]): IndicatorOutputData => {
