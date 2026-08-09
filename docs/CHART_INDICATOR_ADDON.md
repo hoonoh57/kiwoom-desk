@@ -4,7 +4,7 @@
 
 차트의 REST/WebSocket 조회, 캔들 생성, 거래량, 실시간 증분 업데이트를 지표 계산과 분리한다.
 
-`ChartForm`은 SMA, RSI, MACD, SuperTrend 같은 지표 이름이나 계산식을 알지 않는다.
+`ChartForm`은 SMA, RSI, OBV, MACD, SuperTrend 같은 지표 이름이나 계산식을 알지 않는다.
 지표는 선택적 Chart Extension으로 로드되며, 지표 추가기능이 실패해도 기본 차트는 계속 동작해야 한다.
 
 ## 제거 경계
@@ -17,8 +17,6 @@ await import('../addons/chart-indicators/register')
 
 이 import를 제거하면 indicator add-on은 등록되지 않는다.
 `ChartForm`은 빈 `ChartExtensionGroup`으로 정상 동작하고 캔들/거래량/실시간 기능은 그대로 유지된다.
-
-추가기능 모듈 로드 자체가 실패해도 `main.ts`의 catch 이후 기본 Kiwoom Desk가 계속 시작된다.
 
 완전히 들어내려면 다음 두 작업만 하면 된다.
 
@@ -42,7 +40,7 @@ indicator 구현은 기본 `src/` 트리 밖에 있으므로, import가 제거�
    - 새 봉이 생성된 경우
 
 실시간 경로에서 ChartForm은 indicator 전체 재계산을 수행하지 않는다.
-각 plugin calculator가 자신의 마지막 상태만 갱신한다. RSI와 MACD처럼 누적 상태가 필요한 지표는 이전 봉 checkpoint에서 현재 마지막 봉만 다시 계산하여 진행봉 `replace`가 누적 상태를 오염시키지 않게 한다.
+각 plugin calculator가 자신의 마지막 상태만 갱신한다. RSI, MACD, SuperTrend처럼 누적 상태가 필요한 지표는 이전 봉 checkpoint에서 현재 마지막 봉만 다시 계산하여 진행봉 `replace`가 누적 상태를 오염시키지 않게 한다.
 
 ## 파일 구조
 
@@ -59,6 +57,7 @@ addons/chart-indicators/
     rsi.ts
     obv.ts
     macd.ts
+    supertrend.ts
 ```
 
 `catalog.ts`는 `plugins/*.ts`를 `import.meta.glob`으로 자동 발견한다.
@@ -82,25 +81,28 @@ addons/chart-indicators/
 
 같은 plugin은 `instanceId`가 다른 여러 인스턴스로 동시에 사용할 수 있다.
 
-## JSON 저장 계약
+## JSON 저장 계약 v2
 
-저장 키:
+현재 저장 키:
 
 ```text
-kiwoom-desk.chart.indicators.v1
+kiwoom-desk.chart.indicators.v2
 ```
+
+이전 `kiwoom-desk.chart.indicators.v1` 저장값이 있으면 최초 로드 시 v2로 자동 마이그레이션한다.
 
 기본 형태:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "indicators": [
     {
       "instanceId": "sma-20",
       "indicatorId": "sma",
       "pluginVersion": 1,
       "enabled": true,
+      "order": 0,
       "params": {
         "period": 20,
         "source": "close"
@@ -110,6 +112,19 @@ kiwoom-desk.chart.indicators.v1
           "color": "#98c379"
         }
       }
+    },
+    {
+      "instanceId": "rsi-1",
+      "indicatorId": "rsi",
+      "pluginVersion": 1,
+      "enabled": true,
+      "order": 1,
+      "paneHeight": 135,
+      "params": {
+        "period": 14,
+        "upper": 70,
+        "lower": 30
+      }
     }
   ]
 }
@@ -117,6 +132,14 @@ kiwoom-desk.chart.indicators.v1
 
 계산 결과 배열은 저장하지 않는다.
 차트를 다시 열면 JSON 설정만 읽고 현재 candle data로 indicator를 다시 계산한다.
+
+`order`는 지표 목록 및 own-pane 생성 순서를 보존한다.
+`paneHeight`는 own-pane의 사용자 높이를 픽셀 단위로 보존한다.
+Lightweight Charts의 최소 pane 높이 30px 미만 값은 저장하지 않는다.
+
+차트 separator를 사용자가 드래그해 높이를 바꾸면 pointer-up 이후 실제 `PaneApi.getHeight()`를 읽어 저장하고, 다음 로드 때 `setHeight()`로 복원한다.
+지표 설정창의 ↑/↓ 버튼으로 순서를 바꾸면 JSON의 `order`와 실제 pane 생성 순서가 함께 바뀐다.
+마지막 series가 제거된 own-pane은 Lightweight Charts 계약에 따라 자동 제거된다.
 
 플러그인이 현재 설치돼 있지 않은 `indicatorId`도 JSON 설정에서 삭제하지 않고 보존한다.
 나중에 동일 id의 플러그인이 다시 설치되면 설정을 재사용할 수 있다.
@@ -152,19 +175,27 @@ kiwoom-desk.chart.indicators.v1
 - MACD line + Signal line + 양/음 histogram + zero line
 - 실시간 append/replace 증분 계산
 
-## 파라미터 UI
+### SuperTrend
+
+- main pane overlay
+- ATR 기간 / 배수 파라미터
+- Wilder ATR
+- 상승 추세는 한국식 상승색, 하락 추세는 하락색으로 point color 표시
+- 실시간 append/replace 증분 계산
+
+## 파라미터 및 pane UI
 
 IndicatorHost는 plugin `parameters` schema를 읽어 number/integer/select/boolean 입력을 자동 생성한다.
 파라미터를 바꾸면 설정 JSON을 즉시 저장하고 열린 다른 차트에도 같은 구성을 동기화한다.
-
-## JSON UI
 
 차트 툴바의 `지표` 버튼에서 다음 작업을 한다.
 
 - 지표 추가
 - 활성/비활성
 - 파라미터 수정
+- ↑/↓ 순서 이동
 - 인스턴스 삭제
+- 현재 pane 높이 확인
 - 현재 JSON 표시
 - JSON 붙여넣기 적용
 - 기본값 복원
@@ -184,11 +215,11 @@ IndicatorHost는 plugin `parameters` schema를 읽어 number/integer/select/bool
 - 기존 MA5/20/60 default parity
 - SMA 기본 3개 색상 상이
 - SMA 전체 계산과 append/replace 증분값 일치
-- RSI/OBV/MACD가 own pane 출력인지 확인
+- RSI/OBV/MACD own-pane 계약
 - RSI/OBV/MACD reset 결과와 append/replace 증분 결과 parity
-- RSI 상승 데이터 100 확인
-- OBV 기본 누적 규칙 확인
-- MACD multi-output 계약 확인
+- SuperTrend main-pane overlay 계약 및 append/replace parity
+- schemaVersion 2, `order`, `paneHeight`, v1→v2 저장 경계
+- pane `getHeight`/`setHeight` 및 ↑/↓ 순서 UI 경계
 - ChartForm에 지표 계산 하드코딩이 다시 들어오지 않음
 - main.ts의 선택적 add-on 등록 경계 유지
 
