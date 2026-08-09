@@ -3,8 +3,8 @@
 .chart-indicator-button.on{color:#fff;background:var(--accent)}
 .chart-indicator-count{min-width:16px;height:16px;padding:0 4px;border-radius:8px;
   background:#2d4f6b;color:#9cdcfe;font-size:10px;line-height:16px;text-align:center}
-.chart-indicator-panel{position:absolute;z-index:120;top:calc(100% + 6px);right:0;width:390px;
-  max-width:min(390px,calc(100vw - 24px));max-height:min(620px,75vh);overflow:auto;
+.chart-indicator-panel{position:absolute;z-index:120;top:calc(100% + 6px);right:0;width:420px;
+  max-width:min(420px,calc(100vw - 24px));max-height:min(620px,75vh);overflow:auto;
   padding:8px;background:var(--bg-alt);border:1px solid #454545;border-radius:4px;
   box-shadow:0 6px 18px #0009;color:var(--fg)}
 .chart-indicator-panel[hidden]{display:none}
@@ -13,11 +13,14 @@
 .indicator-instance-list{display:grid;gap:6px}
 .indicator-instance{border:1px solid var(--border);border-radius:3px;padding:6px;background:var(--bg)}
 .indicator-instance.missing{border-color:#684b4b}
-.indicator-instance-head{display:flex;align-items:center;gap:6px}
+.indicator-instance-head{display:flex;align-items:center;gap:5px}
 .indicator-instance-head .chk{color:var(--fg);font-size:12px}
-.indicator-instance-head>.lnk{margin-left:auto}
+.indicator-instance-head>.lnk:last-child{margin-left:2px}
 .indicator-instance-id{color:var(--fg-dim);font-family:var(--mono);font-size:9px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.indicator-order{display:inline-flex;align-items:center;gap:1px;margin-left:auto}
+.indicator-order .lnk{padding:1px 4px;font-size:11px}
+.indicator-order .lnk:disabled{opacity:.28;cursor:default;background:none;color:var(--fg-dim)}
 .indicator-params{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px}
 .indicator-params>label{display:flex;flex-direction:column;gap:3px;color:var(--fg-dim);font-size:10px}
 .indicator-params input,.indicator-params select{width:100%;min-width:0;font-family:var(--mono)}
@@ -30,6 +33,6 @@
 .indicator-json-actions{display:flex;align-items:center;gap:6px;margin-top:5px}
 .indicator-message{min-height:16px;margin-top:6px;color:var(--warn);font-size:10px;white-space:pre-wrap}
 @media (max-width:700px){
-  .chart-indicator-panel{right:-80px;width:340px}
+  .chart-indicator-panel{right:-80px;width:350px}
   .indicator-params{grid-template-columns:1fr}
 }
