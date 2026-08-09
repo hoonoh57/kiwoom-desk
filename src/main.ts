@@ -8,7 +8,7 @@ import { Workbench } from './shell/Workbench';
 
 async function bootstrap(): Promise<void> {
   // 선택적 차트 추가기능. 이 import를 제거하면 기본 차트만 남는다.
-  await import('./chart-addons/indicators/register')
+  await import('../addons/chart-indicators/register')
     .catch(e => console.warn('차트 지표 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
 
   const host = document.getElementById('workbench');
