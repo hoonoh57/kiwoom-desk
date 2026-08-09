@@ -70,10 +70,14 @@ export interface IndicatorInstanceConfig {
   params: IndicatorParams;
   pane?: 'main' | 'own';
   style?: IndicatorSeriesStyle;
+  /** 지표 목록 및 own-pane 생성 순서. 낮을수록 먼저 배치된다. */
+  order?: number;
+  /** own-pane 사용자 높이(px). Lightweight Charts 최소 높이 30px 이상만 저장한다. */
+  paneHeight?: number;
 }
 
 export interface IndicatorChartState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   indicators: IndicatorInstanceConfig[];
 }
 
