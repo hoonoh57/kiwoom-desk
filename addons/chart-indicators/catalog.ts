@@ -64,7 +64,7 @@ export function createDefaultIndicatorState(): IndicatorChartState {
           ...defaultParams(plugin),
           ...(item.params ?? {}),
         }),
-        style: cloneStyle(item.style ?? paletteStyle(plugin, ordinal)),
+        style: mergeStyle(paletteStyle(plugin, ordinal), item.style),
       });
     }
   }
@@ -123,7 +123,7 @@ export function normalizeIndicatorState(raw: unknown): IndicatorChartState {
       enabled: item.enabled !== false,
       params: normalizeParams(plugin, migrated),
       pane: item.pane === 'own' ? 'own' : item.pane === 'main' ? 'main' : undefined,
-      style: cloneStyle(explicitStyle ?? paletteStyle(plugin, ordinal)),
+      style: mergeStyle(paletteStyle(plugin, ordinal), explicitStyle),
     });
   }
 
@@ -145,11 +145,23 @@ function paletteStyle(
   return palette[ordinal % palette.length];
 }
 
+function mergeStyle(
+  base: IndicatorSeriesStyle | undefined,
+  override: IndicatorSeriesStyle | undefined,
+): IndicatorSeriesStyle | undefined {
+  if (!base && !override) return undefined;
+  const out: IndicatorSeriesStyle = {};
+  for (const source of [base, override]) {
+    if (!source) continue;
+    for (const [outputId, options] of Object.entries(source)) {
+      out[outputId] = { ...(out[outputId] ?? {}), ...options };
+    }
+  }
+  return out;
+}
+
 function cloneStyle(style: IndicatorSeriesStyle | undefined): IndicatorSeriesStyle | undefined {
-  if (!style) return undefined;
-  return Object.fromEntries(
-    Object.entries(style).map(([outputId, options]) => [outputId, { ...options }]),
-  );
+  return mergeStyle(undefined, style);
 }
 
 function normalizeParam(
