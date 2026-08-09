@@ -1,6 +1,11 @@
 import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
 import {
+  createChartExtensions,
+  type ChartBarChange,
+  type ChartExtensionGroup,
+} from '../chart/extensions';
+import {
   CHART_TICK_SCOPES,
   TICK_SOURCE_SCOPE,
   aggregateSyntheticTickBars,
@@ -68,9 +73,7 @@ export class ChartForm extends ChildForm {
   private chart: any;
   private candles: any;
   private volume: any;
-  private ma5: any;
-  private ma20: any;
-  private ma60: any;
+  private extensions?: ChartExtensionGroup;
   private ro?: ResizeObserver;
 
   private quoteGroup = '';
@@ -150,6 +153,7 @@ export class ChartForm extends ChildForm {
           </select>
           <label class="chk"><input type="checkbox" id="cUpd" ${this.upd === '1' ? 'checked' : ''}> 수정주가</label>
           <label class="chk" title="체크하면 거래량 축을 실제 최댓값으로 씁니다"><input type="checkbox" id="cVolRaw" ${this.volRaw ? 'checked' : ''}> 거래량 원본</label>
+          <span id="cExt" class="chart-ext-slot"></span>
           <button class="lnk" id="cMore" title="과거 데이터 이어붙이기">◂ 더보기</button>
           <button class="lnk" id="cFit" title="전체보기">⤢</button>
         </div>
@@ -231,7 +235,7 @@ export class ChartForm extends ChildForm {
       return;
     }
 
-    const { createChart, CandlestickSeries, HistogramSeries, LineSeries, CrosshairMode } = LC;
+    const { createChart, CandlestickSeries, HistogramSeries, CrosshairMode } = LC;
 
     this.chart = createChart(host, {
       autoSize: true,
@@ -262,17 +266,6 @@ export class ChartForm extends ChildForm {
       priceFormat: { type: 'price', precision: 0, minMove: 1 },
     }, 0);
 
-    const maOpt = (color: string) => ({
-      color,
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    this.ma5 = this.chart.addSeries(LineSeries, maOpt('#e5c07b'), 0);
-    this.ma20 = this.chart.addSeries(LineSeries, maOpt('#98c379'), 0);
-    this.ma60 = this.chart.addSeries(LineSeries, maOpt('#c678dd'), 0);
-
     this.volume = this.chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceLineVisible: false,
@@ -287,6 +280,20 @@ export class ChartForm extends ChildForm {
       this.chart.panes()[1]?.setHeight(120);
     } catch {
       // lightweight-charts v5 초기버전 호환
+    }
+
+    const extensionToolbar = this.$('#cExt');
+    if (extensionToolbar) {
+      this.extensions = createChartExtensions({
+        chart: this.chart,
+        lc: LC,
+        toolbar: extensionToolbar,
+        firstAddonPane: 2,
+        reportError: message => {
+          this.ctx.log.warn(message);
+          this.status(message);
+        },
+      });
     }
 
     this.chart.subscribeCrosshairMove((p: any) => this.paintLegend(p));
@@ -304,6 +311,8 @@ export class ChartForm extends ChildForm {
   private disposeChart(): void {
     this.ro?.disconnect();
     this.ro = undefined;
+    this.extensions?.dispose();
+    this.extensions = undefined;
     try {
       this.chart?.remove();
     } catch {
@@ -312,9 +321,6 @@ export class ChartForm extends ChildForm {
     this.chart = undefined;
     this.candles = undefined;
     this.volume = undefined;
-    this.ma5 = undefined;
-    this.ma20 = undefined;
-    this.ma60 = undefined;
   }
 
   private async load(more: boolean): Promise<void> {
@@ -513,9 +519,7 @@ export class ChartForm extends ChildForm {
       close: b.close,
     })));
     this.volume.setData(this.bars.map(b => this.volumePoint(b)));
-    this.ma5.setData(this.sma(5));
-    this.ma20.setData(this.sma(20));
-    this.ma60.setData(this.sma(60));
+    this.extensions?.onBarsReset(this.bars);
     if (fit) this.chart.timeScale().fitContent();
   }
 
@@ -580,8 +584,11 @@ export class ChartForm extends ChildForm {
 
     const hhmmss = String(values['20'] ?? '').replace(/\D/g, '').padStart(6, '0').slice(-6);
     const tradeQty = this.abs(values['15']);
+    const beforeLength = this.bars.length;
     const changed = this.applyRealtimeTrade(price, tradeQty, hhmmss, values);
     if (!changed) return;
+
+    const change: ChartBarChange = this.bars.length > beforeLength ? 'append' : 'replace';
 
     this.candles.update({
       time: changed.time,
@@ -591,8 +598,9 @@ export class ChartForm extends ChildForm {
       close: changed.close,
     });
     this.volume.update(this.volumePoint(changed));
+    this.extensions?.onBarChanged(changed, change, this.bars);
     this.paintLegend(null);
-    this.scheduleLiveIndicators();
+    this.scheduleLiveStatus();
   }
 
   private applyRealtimeTrade(
@@ -728,18 +736,11 @@ export class ChartForm extends ChildForm {
     );
   }
 
-  private scheduleLiveIndicators(): void {
+  private scheduleLiveStatus(): void {
     if (this.liveFrame !== undefined) return;
 
     this.liveFrame = requestAnimationFrame(() => {
       this.liveFrame = undefined;
-
-      const p5 = this.smaPoint(5);
-      const p20 = this.smaPoint(20);
-      const p60 = this.smaPoint(60);
-      if (p5) this.ma5?.update(p5);
-      if (p20) this.ma20?.update(p20);
-      if (p60) this.ma60?.update(p60);
 
       const synthetic = this.period.id === 'tick' && isSyntheticTickScope(this.scope)
         ? ` · ${TICK_SOURCE_SCOPE}틱 조립`
@@ -761,31 +762,6 @@ export class ChartForm extends ChildForm {
         ? 'rgba(227,74,74,.45)'
         : 'rgba(63,127,214,.45)',
     };
-  }
-
-  private sma(n: number): any[] {
-    const out: any[] = [];
-    let sum = 0;
-    for (let i = 0; i < this.bars.length; i++) {
-      sum += this.bars[i].close;
-      if (i >= n) sum -= this.bars[i - n].close;
-      if (i >= n - 1) {
-        out.push({ time: this.bars[i].time, value: +(sum / n).toFixed(2) });
-      }
-    }
-    return out;
-  }
-
-  private smaPoint(n: number): { time: any; value: number } | null {
-    if (this.bars.length < n) return null;
-
-    let sum = 0;
-    for (let i = this.bars.length - n; i < this.bars.length; i++) {
-      sum += this.bars[i].close;
-    }
-
-    const last = this.bars[this.bars.length - 1];
-    return { time: last.time, value: +(sum / n).toFixed(2) };
   }
 
   private toBar(r: any, def: PeriodDef): Bar | null {
@@ -861,8 +837,7 @@ export class ChartForm extends ChildForm {
     return `<span class="lg">시 ${this.fmt(o)}</span><span class="lg">고 ${this.fmt(h)}</span>
             <span class="lg">저 ${this.fmt(l)}</span>
             <span class="lg ${cls}">종 ${this.fmt(c)} (${rt}%)</span>
-            <span class="lg">거래량 ${this.fmt(v)}</span>
-            <span class="lg ma5">MA5</span><span class="lg ma20">MA20</span><span class="lg ma60">MA60</span>`;
+            <span class="lg">거래량 ${this.fmt(v)}</span>`;
   }
 
   private status(s: string): void {
