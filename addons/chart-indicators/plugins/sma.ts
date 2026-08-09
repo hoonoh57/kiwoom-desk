@@ -109,6 +109,16 @@ const plugin: IndicatorPlugin = {
       },
     },
   ],
+  stylePalette: [
+    { value: { color: '#e5c07b' } },
+    { value: { color: '#98c379' } },
+    { value: { color: '#c678dd' } },
+    { value: { color: '#56b6c2' } },
+    { value: { color: '#d19a66' } },
+    { value: { color: '#e06c75' } },
+    { value: { color: '#61afef' } },
+    { value: { color: '#abb2bf' } },
+  ],
   defaultInstances: [
     {
       instanceId: 'sma-5',
