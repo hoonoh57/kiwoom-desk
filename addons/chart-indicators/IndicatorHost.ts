@@ -21,7 +21,8 @@ import type {
   IndicatorPlugin,
 } from './types';
 
-const STORAGE_KEY = 'kiwoom-desk.chart.indicators.v1';
+const STORAGE_KEY = 'kiwoom-desk.chart.indicators.v2';
+const LEGACY_STORAGE_KEY = 'kiwoom-desk.chart.indicators.v1';
 const STATE_EVENT = 'kiwoom-desk:indicator-state';
 let hostSeq = 0;
 
@@ -30,6 +31,7 @@ interface IndicatorRuntime {
   plugin: IndicatorPlugin;
   calculator: ReturnType<IndicatorPlugin['create']>;
   series: Map<string, any>;
+  pane?: any;
   failed: boolean;
 }
 
@@ -51,6 +53,7 @@ export class IndicatorHost implements ChartExtension {
   private instanceSeq = 0;
   private disposed = false;
   private panelMessage = '';
+  private paneCaptureFrame?: number;
 
   constructor(private readonly context: ChartExtensionContext) {
     this.state = this.loadState();
@@ -69,6 +72,8 @@ export class IndicatorHost implements ChartExtension {
     this.panel.addEventListener('click', this.onPanelClick);
     this.panel.addEventListener('change', this.onPanelChange);
     window.addEventListener(STATE_EVENT, this.onExternalState as EventListener);
+    window.addEventListener('pointerup', this.onPaneInteractionEnd);
+    window.addEventListener('pagehide', this.onPageHide);
 
     this.rebuild();
     this.renderPanel();
@@ -108,10 +113,16 @@ export class IndicatorHost implements ChartExtension {
     if (this.disposed) return;
     this.disposed = true;
 
+    this.capturePaneHeights();
+    this.persistState(false);
+    if (this.paneCaptureFrame !== undefined) cancelAnimationFrame(this.paneCaptureFrame);
+
     this.button.removeEventListener('click', this.onToggle);
     this.panel.removeEventListener('click', this.onPanelClick);
     this.panel.removeEventListener('change', this.onPanelChange);
     window.removeEventListener(STATE_EVENT, this.onExternalState as EventListener);
+    window.removeEventListener('pointerup', this.onPaneInteractionEnd);
+    window.removeEventListener('pagehide', this.onPageHide);
     this.clearRuntimes();
     this.root.remove();
   }
@@ -119,6 +130,22 @@ export class IndicatorHost implements ChartExtension {
   private readonly onToggle = (): void => {
     this.opened = !this.opened;
     this.renderPanel();
+  };
+
+  private readonly onPaneInteractionEnd = (): void => {
+    if (this.disposed || this.paneCaptureFrame !== undefined) return;
+    this.paneCaptureFrame = requestAnimationFrame(() => {
+      this.paneCaptureFrame = undefined;
+      if (!this.capturePaneHeights()) return;
+      this.persistState();
+      if (this.opened) this.renderPanel();
+    });
+  };
+
+  private readonly onPageHide = (): void => {
+    if (this.disposed) return;
+    this.capturePaneHeights();
+    this.persistState(false);
   };
 
   private readonly onPanelClick = (event: Event): void => {
@@ -132,17 +159,25 @@ export class IndicatorHost implements ChartExtension {
       return;
     }
 
+    const instanceId = target.closest<HTMLElement>('[data-instance]')?.dataset.instance;
+
     if (action === 'remove') {
-      const instanceId = target.closest<HTMLElement>('[data-instance]')?.dataset.instance;
       if (instanceId) this.removeIndicator(instanceId);
       return;
     }
 
+    if (action === 'move-up' || action === 'move-down') {
+      if (instanceId) this.moveIndicator(instanceId, action === 'move-up' ? -1 : 1);
+      return;
+    }
+
     if (action === 'json-export') {
+      this.capturePaneHeights();
+      this.persistState(false);
       const area = this.panel.querySelector<HTMLTextAreaElement>('[data-role="json"]');
       if (!area) return;
       area.value = JSON.stringify(this.state, null, 2);
-      this.setPanelMessage('현재 지표 구성을 JSON으로 만들었습니다.');
+      this.setPanelMessage('현재 지표 구성과 pane 순서/높이를 JSON으로 만들었습니다.');
       area.focus();
       area.select();
       return;
@@ -156,7 +191,7 @@ export class IndicatorHost implements ChartExtension {
         this.state = normalizeIndicatorState(parsed);
         this.persistState();
         this.rebuild();
-        this.setPanelMessage('JSON 구성을 적용했습니다.');
+        this.setPanelMessage('JSON 구성과 pane 레이아웃을 적용했습니다.');
       } catch (e: any) {
         this.setPanelMessage(`JSON 오류: ${e?.message ?? e}`);
       }
@@ -208,15 +243,17 @@ export class IndicatorHost implements ChartExtension {
   private readonly onExternalState = (event: CustomEvent<StateEventDetail>): void => {
     const detail = event.detail;
     if (!detail || detail.source === this.hostId || this.disposed) return;
+    this.capturePaneHeights();
     this.state = normalizeIndicatorState(detail.state);
     this.rebuild();
-    this.setPanelMessage('다른 차트에서 변경한 지표 구성을 동기화했습니다.');
+    this.setPanelMessage('다른 차트에서 변경한 지표 구성과 pane 레이아웃을 동기화했습니다.');
   };
 
   private addIndicator(indicatorId: string): void {
     const plugin = getIndicatorPlugin(indicatorId);
     if (!plugin) return;
 
+    this.capturePaneHeights();
     const instanceId = `${plugin.id}-${Date.now().toString(36)}-${++this.instanceSeq}`;
     this.state.indicators.push({
       instanceId,
@@ -224,19 +261,45 @@ export class IndicatorHost implements ChartExtension {
       pluginVersion: plugin.version,
       enabled: true,
       params: defaultParams(plugin),
+      order: this.state.indicators.length,
+      paneHeight: plugin.outputs.some(x => x.pane === 'own') ? 120 : undefined,
     });
-    this.commitConfigChange();
+    this.commitConfigChange(false);
   }
 
   private removeIndicator(instanceId: string): void {
+    this.capturePaneHeights();
     this.state.indicators = this.state.indicators.filter(x => x.instanceId !== instanceId);
-    this.commitConfigChange();
+    this.reindexState();
+    this.persistState();
+    this.rebuild();
   }
 
-  private commitConfigChange(): void {
+  private moveIndicator(instanceId: string, delta: number): void {
+    this.capturePaneHeights();
+    const current = this.state.indicators.findIndex(x => x.instanceId === instanceId);
+    const next = current + delta;
+    if (current < 0 || next < 0 || next >= this.state.indicators.length) return;
+
+    const rows = this.state.indicators;
+    [rows[current], rows[next]] = [rows[next], rows[current]];
+    this.reindexState();
+    this.persistState();
+    this.rebuild();
+  }
+
+  private commitConfigChange(capture = true): void {
+    if (capture) this.capturePaneHeights();
+    this.reindexState();
     this.state = normalizeIndicatorState(this.state);
     this.persistState();
     this.rebuild();
+  }
+
+  private reindexState(): void {
+    this.state.indicators.forEach((config, index) => {
+      config.order = index;
+    });
   }
 
   private rebuild(render = true): void {
@@ -275,6 +338,7 @@ export class IndicatorHost implements ChartExtension {
           };
           const series = this.context.chart.addSeries(seriesType, options, resolvedPane);
           runtime.series.set(output.id, series);
+          if (usesOwnPane && !runtime.pane) runtime.pane = series.getPane?.();
         }
 
         if (this.currentBars.length) {
@@ -285,9 +349,9 @@ export class IndicatorHost implements ChartExtension {
 
         if (usesOwnPane) {
           try {
-            this.context.chart.panes()[paneIndex]?.setHeight(120);
+            runtime.pane?.setHeight(Math.max(30, config.paneHeight ?? 120));
           } catch {
-            // lightweight-charts pane 높이 API 차이는 무시한다.
+            // pane API 차이 또는 제거 직후 상태는 무시한다.
           }
         }
       } catch (e: any) {
@@ -300,6 +364,22 @@ export class IndicatorHost implements ChartExtension {
 
     this.refreshCount();
     if (render) this.renderPanel();
+  }
+
+  private capturePaneHeights(): boolean {
+    let changed = false;
+    for (const runtime of this.runtimes) {
+      if (!runtime.pane || runtime.failed) continue;
+      try {
+        const height = Math.max(30, Math.round(Number(runtime.pane.getHeight?.()) || 0));
+        if (height < 30 || runtime.config.paneHeight === height) continue;
+        runtime.config.paneHeight = height;
+        changed = true;
+      } catch {
+        // 제거 중인 pane은 무시한다.
+      }
+    }
+    return changed;
   }
 
   private clearRuntimes(): void {
@@ -352,20 +432,29 @@ export class IndicatorHost implements ChartExtension {
   private loadState(): IndicatorChartState {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return createDefaultIndicatorState();
-      return normalizeIndicatorState(JSON.parse(saved));
+      if (saved) return normalizeIndicatorState(JSON.parse(saved));
+
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) {
+        const migrated = normalizeIndicatorState(JSON.parse(legacy));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        return migrated;
+      }
     } catch {
-      return createDefaultIndicatorState();
+      // 손상된 저장값은 기본값으로 복구한다.
     }
+    return createDefaultIndicatorState();
   }
 
-  private persistState(): void {
+  private persistState(broadcast = true): void {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
-      // 저장소가 막혀 있어도 현재 차트 기능은 유지한다.
+      // 저장소가 막혀 있어도 현재 세션 차트 동작은 유지한다.
     }
 
+    if (!broadcast) return;
     window.dispatchEvent(new CustomEvent<StateEventDetail>(STATE_EVENT, {
       detail: {
         source: this.hostId,
@@ -387,7 +476,9 @@ export class IndicatorHost implements ChartExtension {
     if (!this.opened) return;
 
     const plugins = listIndicatorPlugins();
-    const rows = this.state.indicators.map(config => this.instanceHtml(config)).join('');
+    const rows = this.state.indicators.map((config, index) =>
+      this.instanceHtml(config, index),
+    ).join('');
 
     this.panel.innerHTML = `
       <div class="indicator-add-row">
@@ -411,28 +502,40 @@ export class IndicatorHost implements ChartExtension {
       <div class="indicator-message">${this.esc(this.panelMessage)}</div>`;
   }
 
-  private instanceHtml(config: IndicatorInstanceConfig): string {
+  private instanceHtml(config: IndicatorInstanceConfig, index: number): string {
     const plugin = getIndicatorPlugin(config.indicatorId);
     if (!plugin) {
       return `
         <div class="indicator-instance missing" data-instance="${this.esc(config.instanceId)}">
           <div class="indicator-instance-head">
             <label class="chk"><input type="checkbox" data-role="enabled" data-instance="${this.esc(config.instanceId)}" ${config.enabled ? 'checked' : ''}> ${this.esc(config.indicatorId)} [플러그인 없음]</label>
+            ${this.orderButtons(index)}
             <button type="button" class="lnk" data-action="remove">삭제</button>
           </div>
         </div>`;
     }
 
     const params = plugin.parameters.map(def => this.paramHtml(config, def)).join('');
+    const ownPane = plugin.outputs.some(output => (config.pane ?? output.pane) === 'own');
+    const paneText = ownPane ? ` · pane ${Math.round(config.paneHeight ?? 120)}px` : '';
     return `
       <div class="indicator-instance" data-instance="${this.esc(config.instanceId)}">
         <div class="indicator-instance-head">
           <label class="chk"><input type="checkbox" data-role="enabled" data-instance="${this.esc(config.instanceId)}" ${config.enabled ? 'checked' : ''}> ${this.esc(plugin.label)}</label>
-          <span class="indicator-instance-id">${this.esc(config.instanceId)}</span>
+          <span class="indicator-instance-id">${this.esc(config.instanceId)}${this.esc(paneText)}</span>
+          ${this.orderButtons(index)}
           <button type="button" class="lnk" data-action="remove">삭제</button>
         </div>
         <div class="indicator-params">${params}</div>
       </div>`;
+  }
+
+  private orderButtons(index: number): string {
+    const last = this.state.indicators.length - 1;
+    return `<span class="indicator-order">
+      <button type="button" class="lnk" data-action="move-up" title="위로" ${index <= 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" class="lnk" data-action="move-down" title="아래로" ${index >= last ? 'disabled' : ''}>↓</button>
+    </span>`;
   }
 
   private paramHtml(
