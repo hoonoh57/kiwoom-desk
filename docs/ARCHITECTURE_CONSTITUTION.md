@@ -239,3 +239,37 @@ Stable 기능은 다음 사유에 한해서만 변경한다.
 8. 주문, 접수, 체결, 미체결 통합 대시보드
 9. 각 기능의 Tested 및 Stable 전환
 10. 안정 태그 이후 별도 응용 프로젝트 시작
+
+## 15. 차트 추가기능 분리 원칙
+
+기본 차트는 데이터 조회, 캔들 생성, 거래량, 연속조회, 실시간 증분 갱신과 같은
+표준 차트 수명주기만 책임진다.
+
+SMA, EMA, RSI, MACD, SuperTrend, JMA, VWAP 같은 계산 지표는
+`ChartForm`에 직접 하드코딩하지 않는다.
+
+기본 차트는 지표 이름이나 지표별 파라미터를 알지 않으며,
+`src/chart/extensions.ts`의 범용 확장 계약만 사용한다.
+
+선택적 지표 구현은 기본 `src/` 트리 밖의 `addons/chart-indicators/`에 둔다.
+앱 진입점의 선택적 dynamic import를 제거하고 add-on 폴더를 제거하면
+캔들, 거래량, 실시간 갱신을 포함한 기본 차트는 독립적으로 남아야 한다.
+
+차트 추가기능은 다음 실패를 기본 차트에 전파하지 않는다.
+
+- add-on 모듈 로드 실패
+- extension factory 생성 실패
+- 특정 지표 생성 실패
+- 특정 지표 전체 재계산 실패
+- 특정 지표 실시간 증분 계산 실패
+- 지표 설정 저장 실패
+
+지표 구성은 계산 결과가 아니라 지표 id, plugin version, instance id, enabled 상태,
+파라미터, pane, style만 JSON으로 직렬화한다.
+차트 재생성 시 candle data에서 계산 결과를 복원한다.
+
+실시간 경로에서는 기본 차트가 `append`와 `replace`를 구분해 전달하고,
+각 지표 runtime은 가능한 한 마지막 상태만 증분 갱신한다.
+전체 `setData`는 최초 조회, 과거 데이터 prepend, 데이터 재구성과 같은 reset 경로에 한정한다.
+
+상세 계약과 제거 절차는 `docs/CHART_INDICATOR_ADDON.md`를 기준으로 한다.
