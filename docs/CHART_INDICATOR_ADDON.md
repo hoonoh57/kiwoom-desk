@@ -4,7 +4,7 @@
 
 차트의 REST/WebSocket 조회, 캔들 생성, 거래량, 실시간 증분 업데이트를 지표 계산과 분리한다.
 
-`ChartForm`은 SMA, RSI, OBV, MACD, SuperTrend 같은 지표 이름이나 계산식을 알지 않는다.
+`ChartForm`은 SMA, RSI, OBV, MACD, SuperTrend, DMI 같은 지표 이름이나 계산식을 알지 않는다.
 지표는 선택적 Chart Extension으로 로드되며, 지표 추가기능이 실패해도 기본 차트는 계속 동작해야 한다.
 
 ## 제거 경계
@@ -40,7 +40,11 @@ indicator 구현은 기본 `src/` 트리 밖에 있으므로, import가 제거�
    - 새 봉이 생성된 경우
 
 실시간 경로에서 ChartForm은 indicator 전체 재계산을 수행하지 않는다.
-각 plugin calculator가 자신의 마지막 상태만 갱신한다. RSI, MACD, SuperTrend처럼 누적 상태가 필요한 지표는 이전 봉 checkpoint에서 현재 마지막 봉만 다시 계산하여 진행봉 `replace`가 누적 상태를 오염시키지 않게 한다.
+모든 plugin calculator는 `append/replace`에서 마지막 출력만 반환하고 IndicatorHost는 해당 series에 `update()`만 호출한다.
+초기조회/더보기처럼 전체 데이터가 바뀐 경우에만 `reset()` + `setData()`를 사용한다.
+
+RSI, MACD, SuperTrend, DMI처럼 누적 상태가 필요한 지표는 이전 봉 checkpoint에서 현재 마지막 봉만 다시 계산하여 진행봉 `replace`가 누적 상태를 오염시키지 않게 한다.
+RSI/OBV Signal도 전체 과거를 다시 계산하지 않고 최근 Signal 기간 값만 사용해 마지막 Signal 점을 계산한다.
 
 ## 파일 구조
 
@@ -58,6 +62,7 @@ addons/chart-indicators/
     obv.ts
     macd.ts
     supertrend.ts
+    dmi.ts
 ```
 
 `catalog.ts`는 `plugins/*.ts`를 `import.meta.glob`으로 자동 발견한다.
@@ -90,6 +95,7 @@ kiwoom-desk.chart.indicators.v2
 ```
 
 이전 `kiwoom-desk.chart.indicators.v1` 저장값이 있으면 최초 로드 시 v2로 자동 마이그레이션한다.
+지표 plugin version이 올라가 새 파라미터가 추가된 경우 기존 JSON은 그대로 유지하면서 누락된 파라미터만 plugin 기본값으로 보충한다.
 
 기본 형태:
 
@@ -116,12 +122,13 @@ kiwoom-desk.chart.indicators.v2
     {
       "instanceId": "rsi-1",
       "indicatorId": "rsi",
-      "pluginVersion": 1,
+      "pluginVersion": 2,
       "enabled": true,
       "order": 1,
       "paneHeight": 135,
       "params": {
         "period": 14,
+        "signalPeriod": 7,
         "upper": 70,
         "lower": 30
       }
@@ -153,27 +160,33 @@ Lightweight Charts의 최소 pane 높이 30px 미만 값은 저장하지 않는�
 - 기준값: close/open/high/low/HL2/HLC3/OHLC4
 - 기존 MA5/20/60 기본값 유지
 - style이 없는 과거 JSON도 인스턴스 순서에 따라 서로 다른 색상을 자동 보충
+- 실시간 append/replace 마지막 SMA 점만 갱신
 
 ### RSI
 
 - own pane
 - Wilder RSI
-- 기간, 과매수, 과매도 파라미터
-- RSI line + upper/lower reference line
-- 실시간 append/replace 증분 계산
+- 기본: RSI 14 + Signal 7
+- Signal은 RSI 값의 단순 이동평균이며 RSI 본선과 다른 색으로 표시
+- 기간, Signal, 과매수, 과매도 파라미터 수정 가능
+- RSI line + Signal line + upper/lower reference line
+- 실시간 append/replace에서 RSI와 Signal 마지막 점만 갱신
 
 ### OBV
 
 - own pane
 - 상승봉 거래량 가산, 하락봉 거래량 차감
-- 실시간 append/replace 증분 계산
+- 기본 Signal 20
+- Signal은 OBV 값의 단순 이동평균이며 OBV 본선과 다른 색으로 표시
+- Signal 기간 수정 가능
+- 실시간 append/replace에서 OBV와 Signal 마지막 점만 갱신
 
 ### MACD
 
 - own pane
 - Fast EMA / Slow EMA / Signal 파라미터
 - MACD line + Signal line + 양/음 histogram + zero line
-- 실시간 append/replace 증분 계산
+- 실시간 append/replace 마지막 출력만 갱신
 
 ### SuperTrend
 
@@ -181,7 +194,17 @@ Lightweight Charts의 최소 pane 높이 30px 미만 값은 저장하지 않는�
 - ATR 기간 / 배수 파라미터
 - Wilder ATR
 - 상승 추세는 한국식 상승색, 하락 추세는 하락색으로 point color 표시
-- 실시간 append/replace 증분 계산
+- 실시간 append/replace 마지막 SuperTrend 점만 갱신
+
+### DMI / ADX
+
+- own pane
+- Wilder Directional Movement 방식
+- 기본 기간 14, ADX 강도 기준 20
+- `+DI` 상승 방향성, `-DI` 하락 방향성, `ADX` 추세 강도를 서로 다른 색으로 표시
+- ADX 강도 기준선을 함께 표시
+- 기간과 ADX 기준값 수정 가능
+- 실시간 append/replace에서 현재 봉의 +DI/-DI/ADX 마지막 점만 갱신
 
 ## 파라미터 및 pane UI
 
@@ -208,16 +231,40 @@ IndicatorHost는 plugin `parameters` schema를 읽어 number/integer/select/bool
 - 특정 indicator 실시간 계산 실패: 해당 indicator series만 제거하고 기본 차트와 다른 indicator 계속 동작
 - localStorage 실패: 현재 세션 차트 동작 유지
 
+## 실시간 증분 불변식
+
+모든 지표는 다음 불변식을 지킨다.
+
+```text
+최초 조회 / 더보기
+    -> calculator.reset(allBars)
+    -> series.setData(allPoints)
+
+실시간 현재봉 수정
+    -> calculator.update(bars, 'replace')
+    -> series.update(lastPoint)
+
+새 봉 생성
+    -> calculator.update(bars, 'append')
+    -> series.update(newPoint)
+```
+
+실시간 체결마다 전체 indicator history를 `setData()` 하지 않는다.
+
 ## 검증
 
 `tests/indicatorAddon.test.ts`에서 다음을 확인한다.
 
 - 기존 MA5/20/60 default parity
 - SMA 기본 3개 색상 상이
-- SMA 전체 계산과 append/replace 증분값 일치
-- RSI/OBV/MACD own-pane 계약
-- RSI/OBV/MACD reset 결과와 append/replace 증분 결과 parity
-- SuperTrend main-pane overlay 계약 및 append/replace parity
+- RSI 본선/Signal 색상 분리 및 Signal 계산
+- OBV 본선/Signal 색상 분리 및 Signal 계산
+- MACD multi-output 계약
+- SuperTrend main-pane overlay 계약
+- DMI +DI/-DI/ADX/강도기준 출력 계약
+- 상승 데이터에서 DMI +DI > -DI, ADX > 0
+- SMA/RSI/OBV/MACD/SuperTrend/DMI 전부 append/replace 결과와 fresh reset 마지막 결과 parity
+- IndicatorHost 실시간 경로가 `calculator.update()` + series `update()`를 사용하는지 확인
 - schemaVersion 2, `order`, `paneHeight`, v1→v2 저장 경계
 - pane `getHeight`/`setHeight` 및 ↑/↓ 순서 UI 경계
 - ChartForm에 지표 계산 하드코딩이 다시 들어오지 않음
