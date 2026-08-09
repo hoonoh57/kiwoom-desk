@@ -65,3 +65,13 @@ test('indicator addon is enabled by one removable dynamic import', async () => {
 
   assert.equal(matches.length, 1);
 });
+
+test('base TypeScript roots do not include the removable addon folder', async () => {
+  const source = await readFile(new URL('../tsconfig.json', import.meta.url), 'utf8');
+  const tsconfig = JSON.parse(source) as { include?: string[] };
+  const roots = tsconfig.include ?? [];
+
+  assert.equal(roots.includes('src'), true);
+  assert.equal(roots.includes('server'), true);
+  assert.equal(roots.some(x => x.startsWith('addons')), false);
+});
