@@ -142,9 +142,9 @@ export class IndicatorHost implements ChartExtension {
       const area = this.panel.querySelector<HTMLTextAreaElement>('[data-role="json"]');
       if (!area) return;
       area.value = JSON.stringify(this.state, null, 2);
+      this.setPanelMessage('현재 지표 구성을 JSON으로 만들었습니다.');
       area.focus();
       area.select();
-      this.setPanelMessage('현재 지표 구성을 JSON으로 만들었습니다.');
       return;
     }
 
@@ -209,7 +209,7 @@ export class IndicatorHost implements ChartExtension {
     const detail = event.detail;
     if (!detail || detail.source === this.hostId || this.disposed) return;
     this.state = normalizeIndicatorState(detail.state);
-    this.rebuild(false);
+    this.rebuild();
     this.setPanelMessage('다른 차트에서 변경한 지표 구성을 동기화했습니다.');
   };
 
@@ -252,10 +252,11 @@ export class IndicatorHost implements ChartExtension {
         (config.pane ?? output.pane) === 'own',
       );
       const paneIndex = usesOwnPane ? ownPane++ : 0;
+      let runtime: IndicatorRuntime | undefined;
 
       try {
         const calculator = plugin.create(config.params);
-        const runtime: IndicatorRuntime = {
+        runtime = {
           config,
           plugin,
           calculator,
@@ -276,10 +277,11 @@ export class IndicatorHost implements ChartExtension {
           runtime.series.set(output.id, series);
         }
 
-        this.runtimes.push(runtime);
         if (this.currentBars.length) {
           this.setRuntimeData(runtime, calculator.reset(this.currentBars));
         }
+
+        this.runtimes.push(runtime);
 
         if (usesOwnPane) {
           try {
@@ -289,6 +291,7 @@ export class IndicatorHost implements ChartExtension {
           }
         }
       } catch (e: any) {
+        if (runtime) this.removeSeries(runtime.series);
         this.context.reportError(
           `지표 ${config.indicatorId}/${config.instanceId} 로드 실패: ${e?.message ?? e}`,
         );
@@ -301,14 +304,19 @@ export class IndicatorHost implements ChartExtension {
 
   private clearRuntimes(): void {
     for (const runtime of this.runtimes.splice(0)) {
-      for (const series of runtime.series.values()) {
-        try {
-          this.context.chart.removeSeries(series);
-        } catch {
-          // 이미 제거된 series는 무시한다.
-        }
+      this.removeSeries(runtime.series);
+    }
+  }
+
+  private removeSeries(seriesMap: Map<string, any>): void {
+    for (const series of seriesMap.values()) {
+      try {
+        this.context.chart.removeSeries(series);
+      } catch {
+        // 이미 제거된 series는 무시한다.
       }
     }
+    seriesMap.clear();
   }
 
   private setRuntimeData(
@@ -332,14 +340,7 @@ export class IndicatorHost implements ChartExtension {
 
   private failRuntime(runtime: IndicatorRuntime, error: any): void {
     runtime.failed = true;
-    for (const series of runtime.series.values()) {
-      try {
-        this.context.chart.removeSeries(series);
-      } catch {
-        // ignore
-      }
-    }
-    runtime.series.clear();
+    this.removeSeries(runtime.series);
     this.context.reportError(
       `지표 ${runtime.config.indicatorId}/${runtime.config.instanceId} 비활성화: ${error?.message ?? error}`,
     );
@@ -469,7 +470,8 @@ export class IndicatorHost implements ChartExtension {
 
   private setPanelMessage(message: string): void {
     this.panelMessage = message;
-    if (this.opened) this.renderPanel();
+    const el = this.panel.querySelector<HTMLElement>('.indicator-message');
+    if (el) el.textContent = message;
   }
 
   private esc(value: unknown): string {
