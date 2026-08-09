@@ -12,13 +12,21 @@
 앱 시작 시 `src/main.ts`에서 다음 선택적 import만 실행한다.
 
 ```ts
-await import('./chart-addons/indicators/register')
+await import('../addons/chart-indicators/register')
 ```
 
 이 import를 제거하면 indicator add-on은 등록되지 않는다.
 `ChartForm`은 빈 `ChartExtensionGroup`으로 정상 동작하고 캔들/거래량/실시간 기능은 그대로 유지된다.
 
 추가기능 모듈 로드 자체가 실패해도 `main.ts`의 catch 이후 기본 Kiwoom Desk가 계속 시작된다.
+
+완전히 들어내려면 다음 두 작업만 하면 된다.
+
+1. `src/main.ts`의 위 dynamic import 제거
+2. `addons/chart-indicators/` 폴더 제거
+
+indicator 구현은 기본 `src/` 트리 밖에 있으므로, import가 제거된 상태에서는 기본 `src`/`server` TypeScript 빌드와 물리적으로 분리된다.
+기본 차트에 남는 것은 지표와 무관한 범용 `src/chart/extensions.ts` 확장 포트뿐이다.
 
 ## 기본 차트와 추가기능의 계약
 
@@ -40,7 +48,7 @@ await import('./chart-addons/indicators/register')
 
 ```text
 src/chart/extensions.ts
-src/chart-addons/indicators/
+addons/chart-indicators/
   register.ts
   IndicatorHost.ts
   catalog.ts
@@ -111,7 +119,7 @@ kiwoom-desk.chart.indicators.v1
 
 ## 현재 기본 구성
 
-기존 ChartForm에 하드코딩돼 있던 MA5/20/60은 `plugins/sma.ts`로 이동했다.
+기존 ChartForm에 하드코딩돼 있던 MA5/20/60은 `addons/chart-indicators/plugins/sma.ts`로 이동했다.
 최초 저장값이 없을 때 다음 세 인스턴스가 자동 생성된다.
 
 - SMA 5 / close
@@ -159,4 +167,5 @@ SMA는 현재 다음을 지원한다.
 - ChartForm에 SMA/MA 계산 하드코딩이 다시 들어오지 않음
 - main.ts의 선택적 add-on 등록 경계 유지
 
-`pull_and_verify.ps1`은 tick aggregation test와 indicator add-on test를 모두 실행한 뒤 production build를 수행한다.
+`pull_and_verify.ps1`은 tick aggregation test를 실행하고, `addons/chart-indicators/register.ts`가 존재할 때 indicator add-on test도 실행한 뒤 production build를 수행한다.
+애드온을 완전히 제거한 구성에서는 indicator test만 자동으로 건너뛴다.
