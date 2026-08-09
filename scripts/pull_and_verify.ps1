@@ -132,11 +132,16 @@ try {
     )
 
     Write-Host ''
-    Write-Host '[4/7] Running chart indicator addon tests...'
-    Invoke-Native -FilePath 'npm' -Arguments @(
-        'run',
-        'test:indicators'
-    )
+    Write-Host '[4/7] Checking optional chart indicator addon...'
+    if (Test-Path 'addons/chart-indicators/register.ts') {
+        Invoke-Native -FilePath 'npm' -Arguments @(
+            'run',
+            'test:indicators'
+        )
+    }
+    else {
+        Write-Host 'chart indicator addon not installed; indicator tests skipped.'
+    }
 
     Write-Host ''
     Write-Host '[5/7] Running production build...'
