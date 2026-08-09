@@ -88,16 +88,7 @@ export class ChartRuntimeProbe {
     }
 
     for (const patch of this.patches.splice(0)) {
-      try {
-        if (patch.wrappedSetData && patch.series.setData === patch.wrappedSetData) {
-          patch.series.setData = patch.originalSetData;
-        }
-        if (patch.wrappedUpdate && patch.series.update === patch.wrappedUpdate) {
-          patch.series.update = patch.originalUpdate;
-        }
-      } catch {
-        // 이미 제거된 series는 무시한다.
-      }
+      this.restorePatch(patch);
     }
   }
 
@@ -206,7 +197,21 @@ export class ChartRuntimeProbe {
       this.patches.push(patch);
     } catch {
       this.patchFailures++;
+      this.restorePatch(patch);
       this.counters.delete(counter.id);
+    }
+  }
+
+  private restorePatch(patch: SeriesPatch): void {
+    try {
+      if (patch.wrappedSetData && patch.series.setData === patch.wrappedSetData) {
+        patch.series.setData = patch.originalSetData;
+      }
+      if (patch.wrappedUpdate && patch.series.update === patch.wrappedUpdate) {
+        patch.series.update = patch.originalUpdate;
+      }
+    } catch {
+      // 이미 제거됐거나 write-protected인 series는 무시한다.
     }
   }
 
