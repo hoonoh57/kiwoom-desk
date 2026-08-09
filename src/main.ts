@@ -11,6 +11,15 @@ async function bootstrap(): Promise<void> {
   await import('../addons/chart-indicators/register')
     .catch(e => console.warn('차트 지표 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
 
+  // 개발 중에는 실시간 증분 계측을 자동 로드한다.
+  // production/preview에서는 ?chartDiag=1 일 때만 로드하며, import를 제거하면 완전히 빠진다.
+  const chartDiagnosticsEnabled = import.meta.env.DEV
+    || new URLSearchParams(window.location.search).get('chartDiag') === '1';
+  if (chartDiagnosticsEnabled) {
+    await import('../addons/chart-diagnostics/register')
+      .catch(e => console.warn('차트 런타임 진단 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
+  }
+
   const host = document.getElementById('workbench');
   if (!host) throw new Error('#workbench 엘리먼트를 찾을 수 없습니다.');
 
