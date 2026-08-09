@@ -3,6 +3,7 @@
 .chart-diagnostics-badge{min-width:28px;height:16px;padding:0 4px;border-radius:8px;font-size:9px;line-height:16px;text-align:center;background:#444;color:#bbb}
 .chart-diagnostics-badge[data-status="pass"]{background:#274f36;color:#9fe3b2}
 .chart-diagnostics-badge[data-status="wait"]{background:#4e4524;color:#f0d889}
+.chart-diagnostics-badge[data-status="patch"]{background:#5a4522;color:#ffd28a}
 .chart-diagnostics-badge[data-status="reset"]{background:#5a2b2b;color:#ffb0b0}
 .chart-diagnostics-panel{position:absolute;z-index:140;top:calc(100% + 6px);right:0;width:470px;max-width:min(470px,calc(100vw - 24px));max-height:min(680px,78vh);overflow:auto;padding:9px;background:var(--bg-alt);border:1px solid #4b4b4b;border-radius:4px;box-shadow:0 8px 24px #000a;color:var(--fg)}
 .chart-diagnostics-panel[hidden]{display:none}
@@ -10,6 +11,7 @@
 .diag-state{padding:6px 8px;border-radius:3px;background:#333;color:#ccc;font-family:var(--mono);font-size:11px}
 .diag-state.pass{background:#203e2a;color:#a8e7b8}
 .diag-state.wait{background:#41391f;color:#f0d889}
+.diag-state.patch{background:#4b381b;color:#ffd28a}
 .diag-state.reset{background:#4a2424;color:#ffb3b3}
 .diag-actions{display:flex;align-items:center;gap:6px;margin-top:7px}
 .diag-help{margin-top:7px;color:var(--fg-dim);font-size:10px;line-height:1.45}
