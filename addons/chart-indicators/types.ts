@@ -2,6 +2,7 @@ import type { ChartBar, ChartBarChange } from '../../src/chart/extensions';
 
 export type IndicatorParameterValue = number | string | boolean;
 export type IndicatorParams = Record<string, IndicatorParameterValue>;
+export type IndicatorSeriesStyle = Record<string, Record<string, unknown>>;
 
 export interface IndicatorParameterDef {
   key: string;
@@ -42,7 +43,7 @@ export interface IndicatorCalculator {
 export interface IndicatorDefaultInstance {
   instanceId: string;
   params?: IndicatorParams;
-  style?: Record<string, Record<string, unknown>>;
+  style?: IndicatorSeriesStyle;
 }
 
 export interface IndicatorPlugin {
@@ -51,6 +52,8 @@ export interface IndicatorPlugin {
   label: string;
   parameters: IndicatorParameterDef[];
   outputs: IndicatorOutputDef[];
+  /** style이 없는 동일 지표 인스턴스에 순서대로 적용되는 안정적인 기본 팔레트 */
+  stylePalette?: IndicatorSeriesStyle[];
   defaultInstances?: IndicatorDefaultInstance[];
   create(params: IndicatorParams): IndicatorCalculator;
   migrateParams?(
@@ -66,7 +69,7 @@ export interface IndicatorInstanceConfig {
   enabled: boolean;
   params: IndicatorParams;
   pane?: 'main' | 'own';
-  style?: Record<string, Record<string, unknown>>;
+  style?: IndicatorSeriesStyle;
 }
 
 export interface IndicatorChartState {
