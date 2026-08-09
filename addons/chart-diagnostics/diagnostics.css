@@ -1,0 +1,25 @@
+.chart-runtime-diagnostics{position:relative;display:inline-flex;align-items:center;gap:3px}
+.chart-diagnostics-button.on{color:#fff;background:#444}
+.chart-diagnostics-badge{min-width:28px;height:16px;padding:0 4px;border-radius:8px;font-size:9px;line-height:16px;text-align:center;background:#444;color:#bbb}
+.chart-diagnostics-badge[data-status="pass"]{background:#274f36;color:#9fe3b2}
+.chart-diagnostics-badge[data-status="wait"]{background:#4e4524;color:#f0d889}
+.chart-diagnostics-badge[data-status="reset"]{background:#5a2b2b;color:#ffb0b0}
+.chart-diagnostics-panel{position:absolute;z-index:140;top:calc(100% + 6px);right:0;width:470px;max-width:min(470px,calc(100vw - 24px));max-height:min(680px,78vh);overflow:auto;padding:9px;background:var(--bg-alt);border:1px solid #4b4b4b;border-radius:4px;box-shadow:0 8px 24px #000a;color:var(--fg)}
+.chart-diagnostics-panel[hidden]{display:none}
+.diag-title{font-weight:600;font-size:12px;margin-bottom:6px}
+.diag-state{padding:6px 8px;border-radius:3px;background:#333;color:#ccc;font-family:var(--mono);font-size:11px}
+.diag-state.pass{background:#203e2a;color:#a8e7b8}
+.diag-state.wait{background:#41391f;color:#f0d889}
+.diag-state.reset{background:#4a2424;color:#ffb3b3}
+.diag-actions{display:flex;align-items:center;gap:6px;margin-top:7px}
+.diag-help{margin-top:7px;color:var(--fg-dim);font-size:10px;line-height:1.45}
+.diag-grid{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin-top:8px;padding:7px;border:1px solid var(--border);border-radius:3px;font-family:var(--mono);font-size:10px}
+.diag-grid span{color:var(--fg-dim)}
+.diag-grid b{text-align:right;font-weight:500}
+.diag-series{width:100%;border-collapse:collapse;margin-top:8px;font-family:var(--mono);font-size:9px}
+.diag-series th,.diag-series td{padding:3px 5px;border-bottom:1px solid var(--border);text-align:right}
+.diag-series th:first-child,.diag-series td:first-child{text-align:left;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diag-series th{color:var(--fg-dim);font-weight:500}
+.diag-series .bad,.diag-grid .bad{color:#ff8f8f}
+.diag-json{width:100%;height:120px;margin-top:8px;resize:vertical;font-family:var(--mono);font-size:9px;color:#ce9178;background:#1e1e1e}
+@media (max-width:700px){.chart-diagnostics-panel{right:-50px;width:360px}.diag-series th:first-child,.diag-series td:first-child{max-width:190px}}
