@@ -4,8 +4,6 @@ export type ChartBar = OhlcvBar;
 export type ChartBarChange = 'append' | 'replace';
 
 export interface ChartExtensionContext {
-  /** 한 ChartForm 인스턴스를 식별하는 안정적인 키 */
-  chartId: string;
   chart: any;
   lc: any;
   toolbar: HTMLElement;
