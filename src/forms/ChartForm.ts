@@ -4,8 +4,8 @@ import {
   CHART_TICK_SCOPES,
   TICK_SOURCE_SCOPE,
   aggregateSyntheticTickBars,
-  inferTickProgress,
   isSyntheticTickScope,
+  reconcileTickProgress,
   requestTickScope,
   syntheticTickFactor,
   type OhlcvBar,
@@ -439,16 +439,27 @@ export class ChartForm extends ChildForm {
     }
 
     try {
-      const oneTickBars = await this.fetchRecentOneTickBars(code, Math.max(1, Number(scope) || 1));
+      const scopeTicks = Math.max(1, Number(scope) || 1);
+      const oneTickBars = await this.fetchRecentOneTickBars(
+        code,
+        Math.max(1000, scopeTicks * 2),
+      );
       if (code !== this.code || this.period.id !== 'tick' || scope !== this.scope) return false;
 
-      const progress = inferTickProgress(oneTickBars, target, scope);
-      if (progress === null) {
+      const match = reconcileTickProgress(oneTickBars, target, scope);
+      if (!match) {
         this.liveTickCount = 0;
         return false;
       }
 
-      this.liveTickCount = progress;
+      this.liveTickCount = match.progress;
+      for (const tick of match.catchup) {
+        const time = Number(tick.time);
+        if (!Number.isFinite(time)) continue;
+        this.upsertTickBarAt(time, tick.close, tick.volume);
+      }
+
+      if (match.catchup.length) this.refreshSeries(false);
       return true;
     } catch {
       this.liveTickCount = 0;
@@ -668,11 +679,14 @@ export class ChartForm extends ChildForm {
   }
 
   private upsertTickBar(hhmmss: string, price: number, tradeQty: number): Bar | null {
+    return this.upsertTickBarAt(this.liveIntradayTime(hhmmss, 0), price, tradeQty);
+  }
+
+  private upsertTickBarAt(time: number, price: number, tradeQty: number): Bar | null {
     const scope = Math.max(1, Number(this.scope) || 1);
     const last = this.bars[this.bars.length - 1];
 
     if (this.liveTickCount === 0) {
-      let time = this.liveIntradayTime(hhmmss, 0);
       const lastTime = Number(last.time);
       if (Number.isFinite(lastTime) && time <= lastTime) time = lastTime + 1;
 
