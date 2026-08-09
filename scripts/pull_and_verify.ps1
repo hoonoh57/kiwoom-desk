@@ -94,7 +94,7 @@ try {
 
     if (-not $SkipPull) {
         Write-Host ''
-        Write-Host '[1/5] Pulling origin/main with fast-forward only...'
+        Write-Host '[1/6] Pulling origin/main with fast-forward only...'
         Invoke-Native -FilePath 'git' -Arguments @(
             'pull',
             '--ff-only',
@@ -104,11 +104,11 @@ try {
     }
     else {
         Write-Host ''
-        Write-Host '[1/5] Pull skipped.'
+        Write-Host '[1/6] Pull skipped.'
     }
 
     Write-Host ''
-    Write-Host '[2/5] Checking dependencies...'
+    Write-Host '[2/6] Checking dependencies...'
 
     $needsInstall = $Install -or -not (Test-Path 'node_modules')
 
@@ -125,14 +125,21 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[3/5] Running production build...'
+    Write-Host '[3/6] Running tick aggregation tests...'
+    Invoke-Native -FilePath 'npm' -Arguments @(
+        'run',
+        'test:tick'
+    )
+
+    Write-Host ''
+    Write-Host '[4/6] Running production build...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'build'
     )
 
     Write-Host ''
-    Write-Host '[4/5] Checking whitespace and repository cleanliness...'
+    Write-Host '[5/6] Checking whitespace and repository cleanliness...'
     Invoke-Native -FilePath 'git' -Arguments @(
         'diff',
         '--check'
@@ -158,7 +165,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[5/5] Verifying local main against origin/main...'
+    Write-Host '[6/6] Verifying local main against origin/main...'
 
     Invoke-Native -FilePath 'git' -Arguments @(
         'fetch',
