@@ -10,6 +10,7 @@ import superTrendPlugin from '../addons/chart-indicators/plugins/supertrend';
 import jmaPlugin from '../addons/chart-indicators/plugins/jma';
 import dmiPlugin from '../addons/chart-indicators/plugins/dmi';
 import disparityPlugin from '../addons/chart-indicators/plugins/disparity';
+import vwapPlugin from '../addons/chart-indicators/plugins/vwap';
 import type { ChartBar } from '../src/chart/extensions';
 import type { IndicatorParams, IndicatorPlugin } from '../addons/chart-indicators/types';
 
@@ -89,6 +90,15 @@ test('every shipped indicator honors append/replace incremental parity', () => {
     [jmaPlugin, { period: 14, phase: 50, power: 2 }],
     [dmiPlugin, { period: 14, strengthLevel: 20 }],
     [disparityPlugin, { period: 20, upper: 105, baseline: 100, lower: 95 }],
+    [vwapPlugin, {
+      stdDev1: 1,
+      stdDev2: 2,
+      showValue: true,
+      showUpper1: true,
+      showLower1: true,
+      showUpper2: true,
+      showLower2: true,
+    }],
   ];
 
   for (const [plugin, params] of cases) assertIncrementalParity(plugin, params);
