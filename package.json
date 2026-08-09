@@ -9,6 +9,7 @@
     "test:tick": "tsx --test tests/tickAggregation.test.ts",
     "test:indicators": "tsx --test tests/indicatorAddon.test.ts",
     "test:diagnostics": "tsx --test tests/chartDiagnostics.test.ts",
+    "test:api": "tsx --test tests/KiwoomClient.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
