@@ -6,6 +6,7 @@ import rsiPlugin from '../addons/chart-indicators/plugins/rsi';
 import obvPlugin from '../addons/chart-indicators/plugins/obv';
 import macdPlugin from '../addons/chart-indicators/plugins/macd';
 import superTrendPlugin from '../addons/chart-indicators/plugins/supertrend';
+import dmiPlugin from '../addons/chart-indicators/plugins/dmi';
 import type { ChartBar } from '../src/chart/extensions';
 import type { IndicatorParams, IndicatorPlugin } from '../addons/chart-indicators/types';
 
@@ -130,22 +131,34 @@ test('SMA plugin reset and incremental update agree', () => {
   assert.deepEqual(calc.update(bars, 'replace').value, { time: 5, value: 50 });
 });
 
-test('RSI is an own-pane plugin and append/replace remain incremental-parity safe', () => {
+test('RSI has a distinct signal average and append/replace remain incremental-parity safe', () => {
   assert.ok(rsiPlugin.outputs.every(x => x.pane === 'own'));
-  assertIncrementalParity(rsiPlugin, { period: 14, upper: 70, lower: 30 });
+  assert.deepEqual(rsiPlugin.outputs.map(x => x.id), ['rsi', 'signal', 'upper', 'lower']);
+  assert.notEqual(
+    String(rsiPlugin.outputs.find(x => x.id === 'rsi')?.options?.color),
+    String(rsiPlugin.outputs.find(x => x.id === 'signal')?.options?.color),
+  );
+  assertIncrementalParity(rsiPlugin, { period: 14, signalPeriod: 7, upper: 70, lower: 30 });
 
-  const rising = Array.from({ length: 15 }, (_, i) => bar(i + 1, 100 + i));
-  const result = rsiPlugin.create({ period: 14, upper: 70, lower: 30 }).reset(rising);
+  const rising = Array.from({ length: 22 }, (_, i) => bar(i + 1, 100 + i));
+  const result = rsiPlugin.create({ period: 14, signalPeriod: 7, upper: 70, lower: 30 }).reset(rising);
   assert.equal(result.rsi[result.rsi.length - 1]?.value, 100);
+  assert.equal(result.signal[result.signal.length - 1]?.value, 100);
 });
 
-test('OBV is an own-pane plugin and append/replace remain incremental-parity safe', () => {
+test('OBV has a distinct signal average and append/replace remain incremental-parity safe', () => {
   assert.ok(obvPlugin.outputs.every(x => x.pane === 'own'));
-  assertIncrementalParity(obvPlugin, {});
+  assert.deepEqual(obvPlugin.outputs.map(x => x.id), ['obv', 'signal']);
+  assert.notEqual(
+    String(obvPlugin.outputs.find(x => x.id === 'obv')?.options?.color),
+    String(obvPlugin.outputs.find(x => x.id === 'signal')?.options?.color),
+  );
+  assertIncrementalParity(obvPlugin, { signalPeriod: 20 });
 
   const bars = [bar(1, 10, 100), bar(2, 11, 200), bar(3, 9, 50), bar(4, 9, 80)];
-  const result = obvPlugin.create({}).reset(bars);
+  const result = obvPlugin.create({ signalPeriod: 3 }).reset(bars);
   assert.deepEqual(result.obv.map(x => x.value), [0, 200, 150, 150]);
+  assert.deepEqual(result.signal.map(x => x.value), [116.666667, 166.666667]);
 });
 
 test('MACD is an own-pane multi-output plugin and append/replace remain incremental-parity safe', () => {
@@ -167,6 +180,48 @@ test('SuperTrend is a main-pane overlay and append/replace remain incremental-pa
   assert.ok(data.trend.every(x => x.color === '#e34a4a' || x.color === '#3f7fd6'));
 });
 
+test('DMI exposes +DI/-DI/ADX strength and remains incremental-parity safe', () => {
+  assert.ok(dmiPlugin.outputs.every(x => x.pane === 'own'));
+  assert.deepEqual(dmiPlugin.outputs.map(x => x.id), ['plusDi', 'minusDi', 'adx', 'strength']);
+  assertIncrementalParity(dmiPlugin, { period: 14, strengthLevel: 20 });
+
+  const rising: ChartBar[] = Array.from({ length: 40 }, (_, i) => ({
+    time: i + 1,
+    open: 100 + i,
+    high: 103 + i,
+    low: 99 + i,
+    close: 102 + i,
+    volume: 1000 + i * 10,
+  }));
+  const result = dmiPlugin.create({ period: 14, strengthLevel: 20 }).reset(rising);
+  const plus = result.plusDi[result.plusDi.length - 1]?.value ?? 0;
+  const minus = result.minusDi[result.minusDi.length - 1]?.value ?? 0;
+  const adx = result.adx[result.adx.length - 1]?.value ?? 0;
+  assert.ok(plus > minus);
+  assert.ok(adx > 0);
+});
+
+test('all indicator plugins honor real-time append/replace incremental parity', () => {
+  const cases: Array<[IndicatorPlugin, IndicatorParams]> = [
+    [smaPlugin, { period: 20, source: 'close' }],
+    [rsiPlugin, { period: 14, signalPeriod: 7, upper: 70, lower: 30 }],
+    [obvPlugin, { signalPeriod: 20 }],
+    [macdPlugin, { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }],
+    [superTrendPlugin, { atrPeriod: 14, multiplier: 2 }],
+    [dmiPlugin, { period: 14, strengthLevel: 20 }],
+  ];
+
+  for (const [plugin, params] of cases) assertIncrementalParity(plugin, params);
+});
+
+test('IndicatorHost uses setData only for reset and update for live changes', async () => {
+  const host = await readFile(new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url), 'utf8');
+
+  assert.equal(host.includes('runtime.calculator.update(bars, change)'), true);
+  assert.equal(host.includes('runtime.series.get(output.id)?.update(point)'), true);
+  assert.equal(host.includes('runtime.series.get(output.id)?.setData(data[output.id] ?? [])'), true);
+});
+
 test('indicator JSON schema persists pane order and height with v1 migration boundary', async () => {
   const types = await readFile(new URL('../addons/chart-indicators/types.ts', import.meta.url), 'utf8');
   const host = await readFile(new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url), 'utf8');
@@ -178,8 +233,8 @@ test('indicator JSON schema persists pane order and height with v1 migration bou
   assert.equal(host.includes('kiwoom-desk.chart.indicators.v1'), true);
   assert.equal(host.includes('getHeight'), true);
   assert.equal(host.includes('setHeight'), true);
-  assert.equal(host.includes("data-action=\"move-up\""), true);
-  assert.equal(host.includes("data-action=\"move-down\""), true);
+  assert.equal(host.includes('data-action="move-up"'), true);
+  assert.equal(host.includes('data-action="move-down"'), true);
 });
 
 test('ChartForm keeps indicator names and calculations out of the base chart', async () => {
@@ -191,6 +246,7 @@ test('ChartForm keeps indicator names and calculations out of the base chart', a
   assert.equal(source.includes('smaPoint'), false);
   assert.equal(source.includes('단순 이동평균'), false);
   assert.equal(source.includes('SuperTrend'), false);
+  assert.equal(source.includes('DMI'), false);
   assert.equal(source.includes('createChartExtensions'), true);
 });
 
