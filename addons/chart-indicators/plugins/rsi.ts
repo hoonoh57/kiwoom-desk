@@ -69,6 +69,24 @@ function buildStates(bars: readonly ChartBar[], period: number): Array<RsiState 
   return states;
 }
 
+function signalPoint(
+  bars: readonly ChartBar[],
+  states: readonly (RsiState | null)[],
+  index: number,
+  period: number,
+  signalPeriod: number,
+): IndicatorPoint | null {
+  if (index < period + signalPeriod - 1) return null;
+
+  let sum = 0;
+  for (let i = index - signalPeriod + 1; i <= index; i++) {
+    const state = states[i];
+    if (!state) return null;
+    sum += state.value;
+  }
+  return { time: bars[index].time, value: round(sum / signalPeriod) };
+}
+
 function constantRange(
   bars: readonly ChartBar[],
   value: number,
@@ -83,6 +101,7 @@ function constantRange(
 
 function createCalculator(params: IndicatorParams): IndicatorCalculator {
   const period = Math.max(2, Math.trunc(Number(params.period) || 14));
+  const signalPeriod = Math.max(1, Math.trunc(Number(params.signalPeriod) || 7));
   const upper = Number(params.upper) || 70;
   const lower = Number(params.lower) || 30;
   let states: Array<RsiState | null> = [];
@@ -90,12 +109,25 @@ function createCalculator(params: IndicatorParams): IndicatorCalculator {
   const rebuild = (bars: readonly ChartBar[]): IndicatorOutputData => {
     states = buildStates(bars, period);
     const rsi: IndicatorPoint[] = [];
+    const signal: IndicatorPoint[] = [];
+    let signalSum = 0;
+
     for (let i = period; i < bars.length; i++) {
       const state = states[i];
-      if (state) rsi.push({ time: bars[i].time, value: round(state.value) });
+      if (!state) continue;
+      rsi.push({ time: bars[i].time, value: round(state.value) });
+
+      signalSum += state.value;
+      const expired = i - signalPeriod;
+      if (expired >= period) signalSum -= states[expired]?.value ?? 0;
+      if (i >= period + signalPeriod - 1) {
+        signal.push({ time: bars[i].time, value: round(signalSum / signalPeriod) });
+      }
     }
+
     return {
       rsi,
+      signal,
       upper: constantRange(bars, upper),
       lower: constantRange(bars, lower),
     };
@@ -105,7 +137,7 @@ function createCalculator(params: IndicatorParams): IndicatorCalculator {
     reset: rebuild,
 
     update(bars, change): IndicatorOutputUpdate {
-      if (!bars.length) return { rsi: null, upper: null, lower: null };
+      if (!bars.length) return { rsi: null, signal: null, upper: null, lower: null };
 
       const lastIndex = bars.length - 1;
       const expectedLength = change === 'append' ? bars.length - 1 : bars.length;
@@ -120,6 +152,7 @@ function createCalculator(params: IndicatorParams): IndicatorCalculator {
       const state = states[lastIndex];
       return {
         rsi: state ? { time: bars[lastIndex].time, value: round(state.value) } : null,
+        signal: signalPoint(bars, states, lastIndex, period, signalPeriod),
         upper: { time: bars[lastIndex].time, value: upper },
         lower: { time: bars[lastIndex].time, value: lower },
       };
@@ -129,10 +162,11 @@ function createCalculator(params: IndicatorParams): IndicatorCalculator {
 
 const plugin: IndicatorPlugin = {
   id: 'rsi',
-  version: 1,
+  version: 2,
   label: '상대강도지수 (RSI)',
   parameters: [
     { key: 'period', label: '기간', type: 'integer', default: 14, min: 2, max: 500, step: 1 },
+    { key: 'signalPeriod', label: 'Signal', type: 'integer', default: 7, min: 1, max: 500, step: 1 },
     { key: 'upper', label: '과매수', type: 'number', default: 70, min: 1, max: 100, step: 1 },
     { key: 'lower', label: '과매도', type: 'number', default: 30, min: 0, max: 99, step: 1 },
   ],
@@ -146,6 +180,20 @@ const plugin: IndicatorPlugin = {
         title: 'RSI',
         color: '#e5c07b',
         lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+      },
+    },
+    {
+      id: 'signal',
+      label: 'Signal',
+      type: 'line',
+      pane: 'own',
+      options: {
+        title: 'RSI Signal',
+        color: '#56b6c2',
+        lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: true,
         crosshairMarkerVisible: false,
