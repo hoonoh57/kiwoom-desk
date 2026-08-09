@@ -7,6 +7,13 @@ export interface OhlcvBar {
   volume: number;
 }
 
+export interface TickProgressMatch<T extends OhlcvBar> {
+  /** target 봉 자체에 이미 포함돼 있던 체결 개수. 0이면 target은 완료 봉이다. */
+  progress: number;
+  /** target snapshot 이후 1틱 snapshot에 추가로 잡힌 체결들. */
+  catchup: T[];
+}
+
 export const TICK_SOURCE_SCOPE = 30;
 
 export const NATIVE_TICK_SCOPES = [1, 3, 5, 10, 30, 60, 120] as const;
@@ -94,43 +101,49 @@ export function aggregateSyntheticTickBars<T extends OhlcvBar>(
 }
 
 /**
- * 1틱 원본의 최신 구간과 현재 표시 봉의 OHLCV를 맞춰
- * 현재 봉 안에 이미 포함된 실제 체결 개수를 추론한다.
+ * 1틱 원본에서 target과 OHLCV가 정확히 일치하는 가장 최신 연속 구간을 찾는다.
  *
- * 동일 초에 여러 체결이 있어도 timestamp가 아니라 OHLCV 전체를
- * 비교하므로 단순 시간 비교보다 안정적이다. 반환값 0은 현재 봉이
- * 정확히 scope개 체결로 완료돼 다음 체결이 새 봉을 시작해야 함을 뜻한다.
+ * target을 받은 뒤 1틱 동기화 요청이 끝날 때까지 새 체결이 생길 수 있으므로
+ * 반드시 배열의 마지막 suffix만 비교하지 않는다. target과 맞는 구간 뒤에
+ * 생긴 체결은 catchup으로 돌려주어 조회 snapshot 사이의 공백을 메운다.
+ * 동일 초 다중체결도 timestamp가 아니라 OHLCV 전체로 경계를 판별한다.
  */
-export function inferTickProgress<T extends OhlcvBar>(
+export function reconcileTickProgress<T extends OhlcvBar>(
   oneTickBars: readonly T[],
   target: OhlcvBar,
   scope: string | number,
-): number | null {
+): TickProgressMatch<T> | null {
   const maxTicks = Math.max(1, Math.trunc(Number(scope) || 1));
   if (!oneTickBars.length) return null;
 
-  const ticks = oneTickBars.slice(-maxTicks);
-  const newest = ticks[ticks.length - 1];
-  if (!sameNumber(newest.close, target.close)) return null;
+  for (let end = oneTickBars.length - 1; end >= 0; end--) {
+    const close = oneTickBars[end].close;
+    if (!sameNumber(close, target.close)) continue;
 
-  let high = Number.NEGATIVE_INFINITY;
-  let low = Number.POSITIVE_INFINITY;
-  let volume = 0;
+    let high = Number.NEGATIVE_INFINITY;
+    let low = Number.POSITIVE_INFINITY;
+    let volume = 0;
+    const firstIndex = Math.max(0, end - maxTicks + 1);
 
-  for (let count = 1; count <= ticks.length; count++) {
-    const bar = ticks[ticks.length - count];
-    high = Math.max(high, bar.high);
-    low = Math.min(low, bar.low);
-    volume += bar.volume;
+    for (let start = end; start >= firstIndex; start--) {
+      const bar = oneTickBars[start];
+      high = Math.max(high, bar.high);
+      low = Math.min(low, bar.low);
+      volume += bar.volume;
+      const count = end - start + 1;
 
-    if (
-      sameNumber(bar.open, target.open)
-      && sameNumber(newest.close, target.close)
-      && sameNumber(high, target.high)
-      && sameNumber(low, target.low)
-      && sameNumber(volume, target.volume)
-    ) {
-      return count % maxTicks;
+      if (
+        sameNumber(bar.open, target.open)
+        && sameNumber(close, target.close)
+        && sameNumber(high, target.high)
+        && sameNumber(low, target.low)
+        && sameNumber(volume, target.volume)
+      ) {
+        return {
+          progress: count % maxTicks,
+          catchup: oneTickBars.slice(end + 1),
+        };
+      }
     }
   }
 
