@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vwapJma from '../addons/chart-strategies/plugins/vwapJmaReclaim';
+import { normalizeStrategyState } from '../addons/chart-strategies/catalog';
+import jmaPlugin from '../addons/chart-indicators/plugins/jma';
 import vwapPlugin from '../addons/chart-indicators/plugins/vwap';
 import type { ChartBar } from '../src/chart/extensions';
 
@@ -26,25 +28,11 @@ const params = {
   jmaPeriod: 3,
   jmaPhase: 50,
   jmaPower: 2,
-  requireJmaAboveVwap: false,
-  maxEntrySigma: 10,
-  armExpiryBars: 30,
   exitMode: 'vwap-close',
 };
 
-test('VWAP-JMA reclaim emits ARM and BUY on a deterministic rebound', () => {
-  const result = vwapJma.create(params).reset(bars());
-  assert.ok(result.signals.some(x => x.type === 'arm'));
-  assert.ok(result.signals.some(x => x.type === 'buy'));
-});
-
-test('every VWAP-JMA BUY is on the actual VWAP upward recross bar', () => {
-  const sample = bars();
-  const result = vwapJma.create(params).reset(sample);
-  const buys = result.signals.filter(x => x.type === 'buy');
-  assert.ok(buys.length > 0);
-
-  const vwap = vwapPlugin.create({
+function vwapByTime(sample: ChartBar[]): Map<string, number> {
+  const data = vwapPlugin.create({
     stdDev1: 1,
     stdDev2: 2,
     showValue: true,
@@ -53,28 +41,96 @@ test('every VWAP-JMA BUY is on the actual VWAP upward recross bar', () => {
     showUpper2: false,
     showLower2: false,
   }).reset(sample);
-  const byTime = new Map((vwap.value ?? []).map(row => [String(row.time), Number(row.value)]));
+  return new Map((data.value ?? []).map(row => [String(row.time), Number(row.value)]));
+}
+
+function jmaByTime(sample: ChartBar[]): Map<string, number> {
+  const data = jmaPlugin.create({ period: 3, phase: 50, power: 2 }).reset(sample);
+  return new Map((data.value ?? []).map(row => [String(row.time), Number(row.value)]));
+}
+
+test('VWAP-JMA v3 emits ARM and BUY on a deterministic rebound without FAIL', () => {
+  const result = vwapJma.create(params).reset(bars());
+  assert.ok(result.signals.some(x => x.type === 'arm'));
+  assert.ok(result.signals.some(x => x.type === 'buy'));
+  assert.equal(result.signals.some(x => x.type === 'fail'), false);
+});
+
+test('every VWAP-JMA ARM is on an actual VWAP downward cross', () => {
+  const sample = bars();
+  const result = vwapJma.create(params).reset(sample);
+  const arms = result.signals.filter(x => x.type === 'arm');
+  assert.ok(arms.length > 0);
+  const vw = vwapByTime(sample);
+
+  for (const arm of arms) {
+    const index = sample.findIndex(row => String(row.time) === String(arm.time));
+    assert.ok(index > 0, 'ARM must have a previous bar');
+    const previousVwap = vw.get(String(sample[index - 1].time));
+    const currentVwap = vw.get(String(sample[index].time));
+    assert.ok(previousVwap !== undefined && currentVwap !== undefined);
+    assert.ok(sample[index - 1].close >= previousVwap, 'previous close must be at/above previous VWAP');
+    assert.ok(sample[index].close < currentVwap, 'ARM close must freshly break below current VWAP');
+  }
+});
+
+test('every VWAP-JMA BUY is the VWAP upward recross while JMA is rising', () => {
+  const sample = bars();
+  const result = vwapJma.create(params).reset(sample);
+  const buys = result.signals.filter(x => x.type === 'buy');
+  assert.ok(buys.length > 0);
+  const vw = vwapByTime(sample);
+  const jm = jmaByTime(sample);
 
   for (const buy of buys) {
     const index = sample.findIndex(row => String(row.time) === String(buy.time));
     assert.ok(index > 0, 'BUY must have a previous bar');
-    const previousVwap = byTime.get(String(sample[index - 1].time));
-    const currentVwap = byTime.get(String(sample[index].time));
+    const previousVwap = vw.get(String(sample[index - 1].time));
+    const currentVwap = vw.get(String(sample[index].time));
+    const previousJma = jm.get(String(sample[index - 1].time));
+    const currentJma = jm.get(String(sample[index].time));
     assert.ok(previousVwap !== undefined && currentVwap !== undefined);
+    assert.ok(previousJma !== undefined && currentJma !== undefined);
     assert.ok(sample[index - 1].close <= previousVwap, 'previous close must be at/below previous VWAP');
     assert.ok(sample[index].close > currentVwap, 'BUY close must freshly reclaim current VWAP');
+    assert.ok(currentJma > previousJma, 'JMA must be rising on the BUY bar');
   }
 });
 
-test('VWAP-JMA v2 defaults to prompt reclaim and migrates v1 strict confirmation off', () => {
-  assert.equal(vwapJma.version, 2);
-  assert.equal(
-    vwapJma.parameters.find(x => x.key === 'requireJmaAboveVwap')?.default,
-    false,
+test('VWAP-JMA v3 removes delayed-entry filters from old saved strategy params', () => {
+  assert.equal(vwapJma.version, 3);
+  assert.deepEqual(
+    vwapJma.parameters.map(x => x.key),
+    ['jmaPeriod', 'jmaPhase', 'jmaPower', 'exitMode'],
   );
-  const migrated = vwapJma.migrateParams?.({ requireJmaAboveVwap: true, jmaPeriod: 14 }, 1);
-  assert.equal(migrated?.requireJmaAboveVwap, false);
-  assert.equal(migrated?.jmaPeriod, 14);
+
+  const normalized = normalizeStrategyState({
+    schemaVersion: 1,
+    strategies: [{
+      instanceId: 'legacy-v2',
+      strategyId: 'vwap-jma-reclaim',
+      pluginVersion: 2,
+      enabled: true,
+      params: {
+        jmaPeriod: 14,
+        jmaPhase: 50,
+        jmaPower: 2,
+        requireJmaAboveVwap: true,
+        maxEntrySigma: 0.5,
+        armExpiryBars: 4,
+        exitMode: 'vwap-close',
+      },
+      execution: { mode: 'signal', qty: 1, exchange: 'SOR', orderType: '3' },
+      showMarkers: true,
+      order: 0,
+    }],
+  });
+
+  assert.equal(normalized.strategies[0].pluginVersion, 3);
+  assert.deepEqual(
+    Object.keys(normalized.strategies[0].params),
+    ['jmaPeriod', 'jmaPhase', 'jmaPower', 'exitMode'],
+  );
 });
 
 test('VWAP-JMA strategy append and replace match a fresh full calculation', () => {
