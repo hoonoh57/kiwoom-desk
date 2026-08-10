@@ -41,6 +41,10 @@ export interface StrategyPlugin {
   description?: string;
   parameters: StrategyParameterDef[];
   create(params: StrategyParams): StrategyCalculator;
+  migrateParams?(
+    params: StrategyParams,
+    fromVersion: number,
+  ): StrategyParams;
 }
 
 export interface StrategyPluginModule {
