@@ -13,6 +13,7 @@ import { OrderForm } from './OrderForm';
 import { PlaceholderForm } from './PlaceholderForm';
 import { ConditionForm } from './ConditionForm';
 import { WatchlistForm } from './WatchlistForm';
+import { AutoTradeForm } from './AutoTradeForm';
 import { SettingsForm } from './SettingsForm';
 
 export type FormFactory = (ctx: AppContext, params: Record<string, any>) => ChildForm;
@@ -43,21 +44,19 @@ export type FormDef = FormFactory & {
 
 /* ---------- 메타 (팩토리보다 먼저 정의) ---------- */
 export const FORM_META: Record<string, FormMeta> = {
-  welcome:   { title: '시작',      icon: 'home',         category: '보기', instance: 'singleton' },
-  output:    { title: '출력',      icon: 'output',       category: '보기', instance: 'singleton' },
-  log:       { title: '로그',      icon: 'list-flat',    category: '보기', instance: 'singleton' },
-  stockInfo: { title: '종목정보',  icon: 'symbol-class', category: '조회', instance: 'per-api', defaultParams: { apiId: 'ka10001' } },
-  trRunner:  { title: 'TR 실행기', icon: 'run-all',      category: '조회', instance: 'per-api', hidden: true },
-  chart:     { title: '차트',      icon: 'graph-line',   category: '조회', instance: 'per-api' },
-  account:   { title: '계좌',      icon: 'account',      category: '거래', instance: 'singleton', defaultParams: { tab: 'balance' } },
-  order:     { title: '주문',      icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy' } },
-  condition: { title: '조건검색',  icon: 'filter',       category: '거래', instance: 'singleton' },
-  watchlist: { title: '관심종목',  icon: 'star',         category: '조회', instance: 'singleton' },
-  autotrade: { title: '자동매매',  icon: 'rocket',       category: '거래', instance: 'singleton' },
-  settings:  { title: '설정',      icon: 'gear',         category: '보기', instance: 'singleton' },
+  welcome:   { title: '시작',          icon: 'home',         category: '보기', instance: 'singleton' },
+  output:    { title: '출력',          icon: 'output',       category: '보기', instance: 'singleton' },
+  log:       { title: '로그',          icon: 'list-flat',    category: '보기', instance: 'singleton' },
+  stockInfo: { title: '종목정보',      icon: 'symbol-class', category: '조회', instance: 'per-api', defaultParams: { apiId: 'ka10001' } },
+  trRunner:  { title: 'TR 실행기',     icon: 'run-all',      category: '조회', instance: 'per-api', hidden: true },
+  chart:     { title: '차트',          icon: 'graph-line',   category: '조회', instance: 'per-api' },
+  account:   { title: '계좌',          icon: 'account',      category: '거래', instance: 'singleton', defaultParams: { tab: 'balance' } },
+  order:     { title: '주문',          icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy' } },
+  condition: { title: '조건검색',      icon: 'filter',       category: '거래', instance: 'singleton' },
+  watchlist: { title: '관심종목',      icon: 'star',         category: '조회', instance: 'singleton' },
+  autotrade: { title: '자동매매 관제', icon: 'rocket',       category: '거래', instance: 'singleton' },
+  settings:  { title: '설정',          icon: 'gear',         category: '보기', instance: 'singleton' },
 };
-
-const ph = (id: string): FormFactory => (c, p) => new PlaceholderForm(c, { ...p, formId: id });
 
 function decorate(id: string, f: FormFactory): FormDef {
   const meta = FORM_META[id] ?? (FORM_META[id] = { title: id });
@@ -80,7 +79,7 @@ const RAW: Record<string, FormFactory> = {
   order:     (c, p) => new OrderForm(c, p),
   condition: (c, p) => new ConditionForm(c, p),
   watchlist: (c, p) => new WatchlistForm(c, p),
-  autotrade: ph('autotrade'),
+  autotrade: (c, p) => new AutoTradeForm(c, p),
   settings:  (c, p) => new SettingsForm(c, p),
 };
 
