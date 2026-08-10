@@ -51,13 +51,13 @@ addons/chart-strategies/
     {
       "instanceId": "vwap-jma-reclaim-...",
       "strategyId": "vwap-jma-reclaim",
-      "pluginVersion": 1,
+      "pluginVersion": 2,
       "enabled": true,
       "params": {
         "jmaPeriod": 14,
         "jmaPhase": 50,
         "jmaPower": 2,
-        "requireJmaAboveVwap": true,
+        "requireJmaAboveVwap": false,
         "maxEntrySigma": 1,
         "armExpiryBars": 12,
         "exitMode": "vwap-close"
@@ -74,6 +74,9 @@ addons/chart-strategies/
   ]
 }
 ```
+
+전략 plugin version이 올라가면 `migrateParams()`를 통해 기존 저장 JSON을 새 계약으로 변환한다.
+JSON을 다시 작성하거나 localStorage를 수동 삭제하도록 사용자에게 요구하지 않는다.
 
 ## 실행 모드
 
@@ -133,18 +136,39 @@ marker 표시 여부는 전략 instance별로 끌 수 있다.
 
 이 전략은 완성된 수익전략이라는 가정이 아니라 검증 가능한 기준 구현이다.
 
-기본 상태 흐름:
+### v2 진입 계약
+
+`Close > VWAP`이라는 상태와 `VWAP을 방금 상향 재돌파했다`는 사건을 구분한다.
+BUY는 반드시 실제 상향 재돌파 봉에서만 평가한다.
 
 ```text
 BLOCKED
   -> Close<VWAP에서 JMA slope 상승: ARM
+
 ARMED
-  -> Close>VWAP, Close>JMA, JMA 상승, 선택적으로 JMA>VWAP,
-     maxEntrySigma 이하: BUY
-  -> 유효봉 초과 또는 JMA 재하락: FAIL
+  -> 직전 Close <= 직전 VWAP
+     AND 현재 Close > 현재 VWAP       : 실제 VWAP 상향 재돌파
+     AND 현재 Close > JMA
+     AND JMA slope > 0
+     AND maxEntrySigma 이하
+     AND 선택적으로 JMA >= VWAP      : BUY
+
+  -> 재돌파 순간 확인조건이 부족하면 나중에 상승한 자리에서 추격 BUY하지 않는다.
+     다음 실제 VWAP 상향 재돌파를 기다린다.
+
+  -> 유효봉 초과 또는 JMA 재하락      : FAIL
+
 LONG
-  -> 선택한 exitMode 구조 이탈: SELL
+  -> 선택한 exitMode 구조 이탈        : SELL
 ```
+
+`requireJmaAboveVwap`은 v2에서 기본 `false`다.
+JMA는 VWAP보다 후행할 수 있으므로 기본 전략에서는 VWAP reclaim을 진입 트리거로 사용하고,
+JMA는 상승 방향과 가격이 JMA 위에 있는지만 확인한다.
+
+v1 저장본의 `requireJmaAboveVwap=true`는 v2 로드 시 `false`로 마이그레이션한다.
+엄격 확인을 다시 켜는 것은 가능하지만, 이 경우 첫 reclaim에서 조건이 맞지 않으면
+JMA가 뒤늦게 VWAP 위로 올라온 시점에 추격하지 않고 다음 실제 reclaim을 기다린다.
 
 모든 주요 문턱은 JSON parameter다. 실제 데이터 검증 결과에 따라 수정하고 버전업한다.
 
@@ -170,6 +194,8 @@ append/replace 결과는 같은 데이터의 fresh reset 결과와 parity가 맞
 `npm run test:strategies`에서 최소 다음을 검사한다.
 
 - 전략의 deterministic ARM/BUY 발생
+- 모든 BUY가 실제 VWAP 상향 재돌파 봉에만 발생
+- v1 -> v2 parameter migration
 - append parity
 - replace parity
 - ChartForm에 전략 이름/주문 로직 하드코딩 없음
