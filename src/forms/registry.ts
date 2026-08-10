@@ -12,6 +12,7 @@ import { AccountForm } from './AccountForm';
 import { OrderForm } from './OrderForm';
 import { PlaceholderForm } from './PlaceholderForm';
 import { ConditionForm } from './ConditionForm';
+import { WatchlistForm } from './WatchlistForm';
 
 export type FormFactory = (ctx: AppContext, params: Record<string, any>) => ChildForm;
 
@@ -77,7 +78,7 @@ const RAW: Record<string, FormFactory> = {
   account:   (c, p) => new AccountForm(c, p),
   order:     (c, p) => new OrderForm(c, p),
   condition: (c, p) => new ConditionForm(c, p),
-  watchlist: ph('watchlist'),
+  watchlist: (c, p) => new WatchlistForm(c, p),
   autotrade: ph('autotrade'),
   settings:  ph('settings'),
 };
