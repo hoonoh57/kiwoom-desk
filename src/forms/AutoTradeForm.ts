@@ -102,7 +102,7 @@ export class AutoTradeForm extends ChildForm {
         </div>
 
         <div class="autotrade-section signals">
-          <div class="tr-sub2">최근 전략 신호 · ${this.recentSignals.length}건
+          <div class="tr-sub2">최근 전략 신호 · <span id="atSignalCount">${this.recentSignals.length}</span>건
             <span class="tr-flex"></span><button class="lnk" id="atClearSignals">지우기</button>
           </div>
           <div id="atSignals"></div>
@@ -181,6 +181,9 @@ export class AutoTradeForm extends ChildForm {
   }
 
   private paintSignals(): void {
+    const count = this.$('#atSignalCount');
+    if (count) count.textContent = String(this.recentSignals.length);
+
     const host = this.$('#atSignals');
     if (!host) return;
     if (!this.recentSignals.length) {
