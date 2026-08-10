@@ -3,12 +3,13 @@ import { DockService } from './DockHost';
 import { SideBar } from './SideBar';
 import { registerCommands } from '../core/commands';
 import { Topics } from '../core/events';
+import { loadWorkbenchSettings } from '../settings';
 
 interface ActivityItem { id: string; icon: string; title: string; formId?: string; params?: any; }
 
 const ACTIVITY: ActivityItem[] = [
   { id: 'explorer',  icon: 'files',       title: '탐색기' },
-  { id: 'chart',     icon: 'graph-line',  title: '차트',     formId: 'chart',     params: { apiId: 'ka10081' } },
+  { id: 'chart',     icon: 'graph-line',  title: '차트',     formId: 'chart' },
   { id: 'watchlist', icon: 'star',        title: '관심종목', formId: 'watchlist' },
   { id: 'account',   icon: 'account',     title: '계좌',     formId: 'account',   params: { tab: 'balance' } },
   { id: 'order',     icon: 'credit-card', title: '주문',     formId: 'order',     params: { side: 'buy' } },
@@ -39,6 +40,7 @@ const MENUS: Array<{ label: string; items: Array<{ label: string; cmd?: string; 
   { label: '보기', items: [
     { label: '출력', cmd: 'view.output' },
     { label: '로그', cmd: 'view.open.log' },
+    { label: '설정', cmd: 'view.open.settings' },
     { label: '', sep: true },
     { label: '명령 팔레트…', cmd: 'palette.show' },
   ]},
@@ -61,6 +63,11 @@ export class Workbench {
     const target = host ?? this.host ?? document.getElementById('workbench');
     if (!target) throw new Error('#workbench 컨테이너를 찾을 수 없습니다.');
     this.host = target;
+
+    const settings = loadWorkbenchSettings();
+    if (settings.general.defaultSymbol && settings.general.defaultSymbol !== this.ctx.state.symbol.code) {
+      this.ctx.state.symbol = { code: settings.general.defaultSymbol, name: '' };
+    }
 
     this.host.innerHTML = `
       <div class="wb-titlebar">
@@ -122,10 +129,11 @@ export class Workbench {
     this.bindSash();
     this.bindStatus();
 
-    // 4) 레이아웃 복원 또는 기본 배치
-    if (!dock.restoreLayout()) {
+    // 4) 레이아웃 복원 또는 기본 배치. 복원 OFF면 저장 데이터는 지우지 않고 이번 시작에서만 사용하지 않는다.
+    const restored = settings.general.restoreLayout ? dock.restoreLayout() : false;
+    if (!restored) {
       dock.open('welcome', {}, {});
-      dock.open('chart', { apiId: 'ka10081' }, { direction: 'right' });
+      dock.open('chart', {}, { direction: 'right' });
       dock.open('output', {}, { direction: 'below' });
       dock.focus('welcome');
     }
@@ -278,9 +286,8 @@ export class Workbench {
     input.focus();
   }
 
-  private escape(s: string): string {
-    return String(s ?? '').replace(/[&<>"]/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  private escape(s: any): string {
+    return String(s ?? '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c] ?? c));
   }
 }
 
