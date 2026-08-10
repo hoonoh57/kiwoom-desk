@@ -62,7 +62,7 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
   const jmaPeriod = integerParam(params.jmaPeriod, 14, 1, 10_000);
   const jmaPhase = integerParam(params.jmaPhase, 50, -100, 100);
   const jmaPower = integerParam(params.jmaPower, 2, 1, 10_000);
-  const requireJmaAboveVwap = boolParam(params.requireJmaAboveVwap, true);
+  const requireJmaAboveVwap = boolParam(params.requireJmaAboveVwap, false);
   const maxEntrySigma = numberParam(params.maxEntrySigma, 1, -10, 10);
   const armExpiryBars = integerParam(params.armExpiryBars, 12, 1, 10_000);
   const exitMode = String(params.exitMode ?? 'vwap-close');
@@ -128,7 +128,14 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
 
     if (state.phase === 'armed') {
       const age = index - state.armedIndex;
-      const confirmed = bar.close > feature.vwap
+      const previousBar = index > 0 ? bars[index - 1] : null;
+      const previousVwap = previousFeature?.vwap;
+      const reclaimed = !!previousBar
+        && previousVwap !== null
+        && previousVwap !== undefined
+        && previousBar.close <= previousVwap
+        && bar.close > feature.vwap;
+      const confirmed = reclaimed
         && bar.close > feature.jma
         && jmaSlope > 0
         && (!requireJmaAboveVwap || feature.jma >= feature.vwap)
@@ -140,11 +147,13 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
           time: bar.time,
           type: 'buy',
           price: bar.close,
-          reason: `VWAP reclaim · Price>JMA · JMA상승 · z=${z.toFixed(2)}`,
+          reason: `VWAP 상향 재돌파 · Price>JMA · JMA상승 · z=${z.toFixed(2)}`,
         });
         return { state, signals };
       }
 
+      // 재돌파 순간에 확인조건이 부족하면 나중에 오른 자리에서 추격하지 않는다.
+      // 다음 실제 VWAP 재돌파가 나오기 전까지 ARM 상태를 유지한다.
       if (age > armExpiryBars || (jmaSlope <= 0 && bar.close < feature.jma)) {
         state = initial(session);
         signals.push({
@@ -255,14 +264,14 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
 
 const plugin: StrategyPlugin = {
   id: 'vwap-jma-reclaim',
-  version: 1,
+  version: 2,
   label: 'VWAP-JMA Reclaim',
-  description: 'VWAP 아래 반전 ARM → VWAP/JMA reclaim BUY → 구조 이탈 SELL. 검증용 기본 전략.',
+  description: 'VWAP 아래 JMA 상승 ARM → 실제 VWAP 상향 재돌파 봉에서 JMA 상승 확인 BUY → 구조 이탈 SELL.',
   parameters: [
     { key: 'jmaPeriod', label: 'JMA 기간', type: 'integer', default: 14, min: 1, max: 10_000 },
     { key: 'jmaPhase', label: 'JMA Phase', type: 'integer', default: 50, min: -100, max: 100 },
     { key: 'jmaPower', label: 'JMA Power', type: 'integer', default: 2, min: 1, max: 10_000 },
-    { key: 'requireJmaAboveVwap', label: 'JMA>VWAP 확인', type: 'boolean', default: true },
+    { key: 'requireJmaAboveVwap', label: 'JMA>VWAP 추가확인(엄격)', type: 'boolean', default: false },
     { key: 'maxEntrySigma', label: '최대 진입 σ', type: 'number', default: 1, min: -10, max: 10, step: 0.1 },
     { key: 'armExpiryBars', label: 'ARM 유효봉', type: 'integer', default: 12, min: 1, max: 10_000 },
     {
@@ -277,6 +286,15 @@ const plugin: StrategyPlugin = {
       ],
     },
   ],
+  migrateParams(params, fromVersion) {
+    if (fromVersion < 2) {
+      return {
+        ...params,
+        requireJmaAboveVwap: false,
+      };
+    }
+    return params;
+  },
   create: createCalculator,
 };
 
