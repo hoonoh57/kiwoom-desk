@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   normalizeWatchlistDocument,
@@ -34,9 +34,9 @@ export class WatchlistStore {
       revision: current.revision + 1,
       groups,
     });
-    const temp = `${this.filePath}.tmp`;
-    writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-    renameSync(temp, this.filePath);
+    // 관심종목 문서는 작고 로컬 전용이다. Windows에서 기존 파일 위 rename 동작이
+    // 파일시스템/보안SW에 따라 달라질 수 있으므로 직접 동기 write를 사용한다.
+    writeFileSync(this.filePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
     return next;
   }
 }
