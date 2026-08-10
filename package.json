@@ -13,6 +13,7 @@
     "test:api": "tsx --test tests/KiwoomClient.test.ts",
     "test:watchlist": "tsx --test tests/watchlist.test.ts",
     "test:settings": "tsx --test tests/settings.test.ts",
+    "test:autotrade": "tsx --test tests/autotrade.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
