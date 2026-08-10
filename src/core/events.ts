@@ -60,7 +60,15 @@ export const Topics = {
   ConditionHit: 'condition.hit',
   ConnectionChanged: 'conn.changed',
   WsChanged: 'ws.changed',
-  Log: 'log.append'
+  Log: 'log.append',
+
+  // 선택적 strategy add-on과 중앙 계좌현황 사이의 중립 계약.
+  StrategySignal: 'strategy.signal',
+  StrategyTradeIntent: 'strategy.trade-intent',
+  StrategyPortfolioChanged: 'strategy.portfolio-changed',
+  StrategyPortfolioRequest: 'strategy.portfolio-request',
+  StrategyBrokerArm: 'strategy.broker-arm',
+  StrategyBrokerState: 'strategy.broker-state',
 } as const;
 
 /** 토픽별 페이로드 타입 */
@@ -72,3 +80,48 @@ export interface RealtimePayload extends Broadcast {
   values?: Record<string, string>;
 }
 
+export type StrategyExecutionMode = 'signal' | 'paper' | 'broker';
+export type StrategyTradeSide = 'buy' | 'sell';
+
+export interface StrategyTradeIntentPayload extends Broadcast {
+  strategyId: string;
+  strategyInstanceId: string;
+  strategyLabel: string;
+  code: string;
+  name?: string;
+  side: StrategyTradeSide;
+  executionMode: StrategyExecutionMode;
+  qty: number;
+  exchange: 'KRX' | 'NXT' | 'SOR';
+  orderType: string;
+  referencePrice: number;
+  signalTime: any;
+  reason: string;
+  chartPeriod?: string;
+  chartScope?: string;
+}
+
+export interface StrategyPositionSnapshot {
+  key: string;
+  strategyId: string;
+  strategyInstanceId: string;
+  strategyLabel: string;
+  code: string;
+  name?: string;
+  executionMode: StrategyExecutionMode;
+  status: 'paper-open' | 'broker-pending-buy' | 'broker-open' | 'broker-pending-sell' | 'broker-error';
+  qty: number;
+  filledQty?: number;
+  entryPrice: number;
+  currentPrice: number;
+  pnlPct: number;
+  orderNo?: string;
+  reason?: string;
+  updatedAt: number;
+}
+
+export interface StrategyPortfolioSnapshot extends Broadcast {
+  brokerArmed: boolean;
+  positions: StrategyPositionSnapshot[];
+  lastError?: string;
+}
