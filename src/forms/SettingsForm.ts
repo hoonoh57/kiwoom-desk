@@ -1,6 +1,5 @@
 import { ChildForm } from './ChildForm';
 import {
-  defaultWorkbenchSettings,
   exportWorkbenchSettings,
   importWorkbenchSettings,
   loadWorkbenchSettings,
@@ -16,8 +15,6 @@ const PERIODS: Array<{ v: SettingsChartPeriod; t: string }> = [
   { v: 'tick', t: '틱' }, { v: 'min', t: '분' }, { v: 'day', t: '일' },
   { v: 'week', t: '주' }, { v: 'month', t: '월' }, { v: 'year', t: '년' },
 ];
-const MINUTE_SCOPES = ['1', '3', '5', '10', '15', '30', '60'];
-const TICK_SCOPES = ['1', '3', '5', '10', '30', '60', '120', '240', '360', '480', '540', '720'];
 const ORDER_TYPES = [
   { v: '0', t: '보통(지정가)' }, { v: '3', t: '시장가' }, { v: '5', t: '조건부지정가' },
   { v: '6', t: '최유리지정가' }, { v: '7', t: '최우선지정가' }, { v: '10', t: '보통(IOC)' },
@@ -73,20 +70,10 @@ export class SettingsForm extends ChildForm {
 
           <section class="settings-card">
             <h3>차트</h3>
-            <label class="settings-row"><span>기본 주기</span>
+            <label class="settings-row"><span>새 기본 차트 주기</span>
               <select class="input" id="sPeriod">${this.periodOptions(s.chart.defaultPeriod)}</select>
             </label>
-            <label class="settings-row"><span>분봉 기본 단위</span>
-              <select class="input" id="sMinute">${MINUTE_SCOPES.map(v => `<option value="${v}" ${v === s.chart.defaultMinuteScope ? 'selected' : ''}>${v}분</option>`).join('')}</select>
-            </label>
-            <label class="settings-row"><span>틱봉 기본 단위</span>
-              <select class="input" id="sTick">${TICK_SCOPES.map(v => `<option value="${v}" ${v === s.chart.defaultTickScope ? 'selected' : ''}>${v}틱</option>`).join('')}</select>
-            </label>
-            <label class="settings-row"><span>관심종목 더블클릭</span>
-              <select class="input" id="sWatchPeriod">${this.periodOptions(s.chart.watchlistOpenPeriod)}</select>
-            </label>
-            <label class="settings-check"><input type="checkbox" id="sAdjusted" ${s.chart.adjustedPrice ? 'checked' : ''}><span>새 차트는 수정주가 사용</span></label>
-            <label class="settings-check"><input type="checkbox" id="sVolumeRaw" ${s.chart.volumeRaw ? 'checked' : ''}><span>새 차트는 거래량 원본 축 사용</span></label>
+            <div class="settings-note">분/틱 세부단위, 수정주가, 거래량 축은 각 ChartForm의 프로퍼티 책임으로 유지합니다.</div>
           </section>
 
           <section class="settings-card">
@@ -140,11 +127,6 @@ export class SettingsForm extends ChildForm {
       },
       chart: {
         defaultPeriod: this.$<HTMLSelectElement>('#sPeriod')?.value,
-        defaultMinuteScope: this.$<HTMLSelectElement>('#sMinute')?.value,
-        defaultTickScope: this.$<HTMLSelectElement>('#sTick')?.value,
-        watchlistOpenPeriod: this.$<HTMLSelectElement>('#sWatchPeriod')?.value,
-        adjustedPrice: !!this.$<HTMLInputElement>('#sAdjusted')?.checked,
-        volumeRaw: !!this.$<HTMLInputElement>('#sVolumeRaw')?.checked,
       },
       order: {
         defaultExchange: this.$<HTMLSelectElement>('#sExchange')?.value,
@@ -156,7 +138,7 @@ export class SettingsForm extends ChildForm {
 
   private save(): void {
     this.settings = saveWorkbenchSettings(this.readForm());
-    this.message = '저장했습니다. 새 차트/주문에는 즉시 적용되며 레이아웃 복원 설정은 다음 시작부터 적용됩니다.';
+    this.message = '저장했습니다. 새 차트/주문에는 즉시 적용되며 기본 종목/레이아웃 복원은 다음 시작부터 적용됩니다.';
     this.render();
   }
 
