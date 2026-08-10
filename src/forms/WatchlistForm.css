@@ -1,0 +1,124 @@
+.watch-form {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg, #1e1e1e);
+}
+
+.watch-bar,
+.watch-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #343434;
+  flex: 0 0 auto;
+}
+
+.watch-add {
+  background: #232323;
+}
+
+.watch-group {
+  min-width: 170px;
+  max-width: 280px;
+}
+
+.watch-add #wCode {
+  width: 210px;
+}
+
+.watch-add #wName {
+  width: 190px;
+}
+
+.watch-help {
+  margin-left: 6px;
+  color: #8f8f8f;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.watch-msg {
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  color: #9f9f9f;
+  border-bottom: 1px solid #2d2d2d;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.watch-msg.warn {
+  color: #d7ba7d;
+}
+
+.watch-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.watch-grid-wrap {
+  height: 100%;
+  overflow: auto;
+}
+
+.watch-grid {
+  min-width: 940px;
+}
+
+.watch-grid th,
+.watch-grid td {
+  white-space: nowrap;
+}
+
+.watch-grid td.watch-name {
+  text-align: left;
+  min-width: 110px;
+}
+
+.watch-note {
+  width: 100%;
+  min-width: 180px;
+  box-sizing: border-box;
+}
+
+.watch-actions {
+  text-align: center;
+  min-width: 92px;
+}
+
+.watch-actions .mini {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  margin: 0 1px;
+  border: 1px solid #454545;
+  background: #2b2b2b;
+  color: #c8c8c8;
+  cursor: pointer;
+}
+
+.watch-actions .mini:hover {
+  background: #3a3a3a;
+}
+
+.watch-actions .mini.danger:hover {
+  background: #5a2a2a;
+  border-color: #7a3b3b;
+}
+
+.watch-grid tr.clickable {
+  cursor: default;
+}
+
+.watch-grid tr.clickable:hover td {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+@media (max-width: 900px) {
+  .watch-help { display: none; }
+  .watch-add #wName { width: 150px; }
+}
