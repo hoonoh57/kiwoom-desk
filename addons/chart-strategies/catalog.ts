@@ -7,27 +7,35 @@ import type {
   StrategyPlugin,
   StrategyPluginModule,
 } from './types';
+import {
+  getRegisteredStrategyPlugin,
+  listRegisteredStrategyPlugins,
+  onStrategyPluginsChanged,
+  registerStrategyPlugin,
+} from './registry';
 
 const modules = import.meta.glob<StrategyPluginModule>(
   './plugins/*.ts',
   { eager: true },
 );
 
-const plugins = new Map<string, StrategyPlugin>();
-
+// Local reference/plugins remain zero-configuration: files under plugins/*.ts
+// are discovered automatically and registered through the same public registry
+// used by external add-ons.
 for (const [path, module] of Object.entries(modules).sort(([a], [b]) => a.localeCompare(b))) {
   const plugin = module.default;
   if (!plugin?.id) throw new Error(`Strategy plugin id missing: ${path}`);
-  if (plugins.has(plugin.id)) throw new Error(`Duplicate strategy plugin id: ${plugin.id}`);
-  plugins.set(plugin.id, plugin);
+  registerStrategyPlugin(plugin);
 }
 
+export { onStrategyPluginsChanged, registerStrategyPlugin };
+
 export function listStrategyPlugins(): StrategyPlugin[] {
-  return Array.from(plugins.values()).sort((a, b) => a.label.localeCompare(b.label, 'ko-KR'));
+  return listRegisteredStrategyPlugins();
 }
 
 export function getStrategyPlugin(id: string): StrategyPlugin | undefined {
-  return plugins.get(id);
+  return getRegisteredStrategyPlugin(id);
 }
 
 export function defaultStrategyParams(plugin: StrategyPlugin): StrategyParams {
@@ -62,7 +70,7 @@ export function normalizeStrategyState(raw: unknown): StrategyChartState {
     const instanceId = String(item.instanceId ?? '').trim();
     if (!strategyId || !instanceId) continue;
 
-    const plugin = plugins.get(strategyId);
+    const plugin = getRegisteredStrategyPlugin(strategyId);
     const rawParams = isRecord(item.params) ? item.params : {};
     const savedPluginVersion = Math.max(1, Math.trunc(Number(item.pluginVersion) || 1));
     let sourceParams = primitiveParams(rawParams);
