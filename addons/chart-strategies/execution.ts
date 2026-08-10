@@ -119,8 +119,13 @@ export class StrategyExecutionRuntime {
     const side = intent.side;
     const qty = side === 'sell' && existing ? Math.min(existing.qty, intent.qty) : intent.qty;
     const apiId = side === 'buy' ? 'kt10000' : 'kt10001';
+    const mockMode = String(this.ctx.state.mode).includes('모의');
+    const exchange = mockMode ? 'KRX' : intent.exchange;
+    if (mockMode && intent.exchange !== 'KRX') {
+      this.ctx.log.info(`전략 모의투자 거래소 정규화: ${intent.exchange} → KRX (${intent.code})`);
+    }
     const body: Record<string, string> = {
-      dmst_stex_tp: intent.exchange,
+      dmst_stex_tp: exchange,
       stk_cd: intent.code,
       ord_qty: String(qty),
       trde_tp: intent.orderType || '3',
@@ -164,7 +169,7 @@ export class StrategyExecutionRuntime {
       base.updatedAt = Date.now();
       this.positions.set(key, base);
       this.ctx.log.info(
-        `[전략/${this.ctx.state.mode}] ${side.toUpperCase()} 주문접수 ${intent.code} ${qty}주 · ord=${orderNo || '-'} · ${intent.strategyLabel}`,
+        `[전략/${this.ctx.state.mode}] ${side.toUpperCase()} 주문접수 ${intent.code} ${qty}주 · ${exchange} · ord=${orderNo || '-'} · ${intent.strategyLabel}`,
       );
       this.changed();
 
