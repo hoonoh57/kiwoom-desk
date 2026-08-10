@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vwapJma from '../addons/chart-strategies/plugins/vwapJmaReclaim';
-import { normalizeStrategyState } from '../addons/chart-strategies/catalog';
 import jmaPlugin from '../addons/chart-indicators/plugins/jma';
 import vwapPlugin from '../addons/chart-indicators/plugins/vwap';
 import type { ChartBar } from '../src/chart/extensions';
@@ -104,33 +103,22 @@ test('VWAP-JMA v3 removes delayed-entry filters from old saved strategy params',
     ['jmaPeriod', 'jmaPhase', 'jmaPower', 'exitMode'],
   );
 
-  const normalized = normalizeStrategyState({
-    schemaVersion: 1,
-    strategies: [{
-      instanceId: 'legacy-v2',
-      strategyId: 'vwap-jma-reclaim',
-      pluginVersion: 2,
-      enabled: true,
-      params: {
-        jmaPeriod: 14,
-        jmaPhase: 50,
-        jmaPower: 2,
-        requireJmaAboveVwap: true,
-        maxEntrySigma: 0.5,
-        armExpiryBars: 4,
-        exitMode: 'vwap-close',
-      },
-      execution: { mode: 'signal', qty: 1, exchange: 'SOR', orderType: '3' },
-      showMarkers: true,
-      order: 0,
-    }],
-  });
+  const migrated = vwapJma.migrateParams?.({
+    jmaPeriod: 14,
+    jmaPhase: 50,
+    jmaPower: 2,
+    requireJmaAboveVwap: true,
+    maxEntrySigma: 0.5,
+    armExpiryBars: 4,
+    exitMode: 'vwap-close',
+  }, 2);
 
-  assert.equal(normalized.strategies[0].pluginVersion, 3);
-  assert.deepEqual(
-    Object.keys(normalized.strategies[0].params),
-    ['jmaPeriod', 'jmaPhase', 'jmaPower', 'exitMode'],
-  );
+  assert.deepEqual(migrated, {
+    jmaPeriod: 14,
+    jmaPhase: 50,
+    jmaPower: 2,
+    exitMode: 'vwap-close',
+  });
 });
 
 test('VWAP-JMA strategy append and replace match a fresh full calculation', () => {
