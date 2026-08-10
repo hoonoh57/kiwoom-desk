@@ -96,3 +96,11 @@ test('watchlist is a real singleton form and quote refresh remains explicit', ()
   assert.match(form, /this\.ctx\.api\.call<any>\('ka10001'/);
   assert.equal(onInit.includes('refreshQuotes'), false, 'opening the form must not fan out REST quote calls');
 });
+
+test('watchlist is reachable from activity bar and query menu', () => {
+  const root = path.resolve(process.cwd());
+  const workbench = fs.readFileSync(path.join(root, 'src/shell/Workbench.ts'), 'utf8');
+
+  assert.match(workbench, /id: 'watchlist'.*formId: 'watchlist'/);
+  assert.match(workbench, /label: '관심종목', cmd: 'view\.open\.watchlist'/);
+});
