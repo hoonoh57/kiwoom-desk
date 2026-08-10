@@ -2,6 +2,7 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { readFileSync, writeFileSync } from 'node:fs';
 import 'dotenv/config';
+import { installWatchlistRoutes } from './watchlists';
 
 // ── 환경 ────────────────────────────────────────────────────────────
 const MOCK = (process.env.KIWOOM_MOCK ?? 'true').toLowerCase() === 'true';
@@ -109,6 +110,7 @@ async function callKiwoom(
 // ── Express ────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+installWatchlistRoutes(app);
 
 /** 루트: 브라우저로 바로 열어보는 진단 페이지 */
 app.get('/', (_req, res) => {
@@ -124,6 +126,7 @@ app.get('/', (_req, res) => {
       <p>앱키: <b style="color:${APPKEY ? '#4ec9b0' : '#f48771'}">${APPKEY ? '설정됨' : '없음 — .env 확인'}</b></p>
       <hr style="border:0;border-top:1px solid #333;margin:20px 0">
       <p><a style="color:#3794ff" href="/api/kiwoom/status">/api/kiwoom/status</a> — 토큰 상태(JSON)</p>
+      <p><a style="color:#3794ff" href="/api/watchlists">/api/watchlists</a> — 관심종목 저장(JSON)</p>
       <p>웹 UI는 <a style="color:#3794ff" href="http://localhost:5173">http://localhost:5173</a> 입니다.</p>
     </body>`);
 });
