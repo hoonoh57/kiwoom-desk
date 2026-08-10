@@ -7,6 +7,8 @@ export interface ChartExtensionContext {
   chart: any;
   lc: any;
   toolbar: HTMLElement;
+  /** 기본 가격 series. add-on이 pane 내부 series 순서를 추정하지 않도록 공개한다. */
+  primarySeries?: any;
   firstAddonPane: number;
   reportError(message: string): void;
 }
