@@ -64,6 +64,12 @@ export function normalizeStrategyState(raw: unknown): StrategyChartState {
 
     const plugin = plugins.get(strategyId);
     const rawParams = isRecord(item.params) ? item.params : {};
+    const savedPluginVersion = Math.max(1, Math.trunc(Number(item.pluginVersion) || 1));
+    let sourceParams = primitiveParams(rawParams);
+    if (plugin?.migrateParams && savedPluginVersion < plugin.version) {
+      sourceParams = plugin.migrateParams(sourceParams, savedPluginVersion);
+    }
+
     const execution = isRecord(item.execution) ? item.execution : {};
     const mode = execution.mode === 'paper' || execution.mode === 'broker' ? execution.mode : 'signal';
     const exchange = execution.exchange === 'KRX' || execution.exchange === 'NXT' ? execution.exchange : 'SOR';
@@ -73,9 +79,9 @@ export function normalizeStrategyState(raw: unknown): StrategyChartState {
     strategies.push({
       instanceId,
       strategyId,
-      pluginVersion: plugin?.version ?? Math.max(1, Math.trunc(Number(item.pluginVersion) || 1)),
+      pluginVersion: plugin?.version ?? savedPluginVersion,
       enabled: item.enabled !== false,
-      params: plugin ? normalizeStrategyParams(plugin, rawParams) : primitiveParams(rawParams),
+      params: plugin ? normalizeStrategyParams(plugin, sourceParams) : sourceParams,
       execution: { mode, qty, exchange, orderType },
       showMarkers: item.showMarkers !== false,
       order: strategies.length,
