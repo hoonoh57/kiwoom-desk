@@ -94,7 +94,7 @@ try {
 
     if (-not $SkipPull) {
         Write-Host ''
-        Write-Host '[1/10] Pulling origin/main with fast-forward only...'
+        Write-Host '[1/11] Pulling origin/main with fast-forward only...'
         Invoke-Native -FilePath 'git' -Arguments @(
             'pull',
             '--ff-only',
@@ -104,11 +104,11 @@ try {
     }
     else {
         Write-Host ''
-        Write-Host '[1/10] Pull skipped.'
+        Write-Host '[1/11] Pull skipped.'
     }
 
     Write-Host ''
-    Write-Host '[2/10] Checking dependencies...'
+    Write-Host '[2/11] Checking dependencies...'
 
     $needsInstall = $Install -or -not (Test-Path 'node_modules')
 
@@ -125,21 +125,28 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[3/10] Running tick aggregation tests...'
+    Write-Host '[3/11] Running tick aggregation tests...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'test:tick'
     )
 
     Write-Host ''
-    Write-Host '[4/10] Running Kiwoom REST rate-limit policy tests...'
+    Write-Host '[4/11] Running Kiwoom REST rate-limit policy tests...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'test:api'
     )
 
     Write-Host ''
-    Write-Host '[5/10] Checking optional chart indicator addon...'
+    Write-Host '[5/11] Running watchlist persistence and form contract tests...'
+    Invoke-Native -FilePath 'npm' -Arguments @(
+        'run',
+        'test:watchlist'
+    )
+
+    Write-Host ''
+    Write-Host '[6/11] Checking optional chart indicator addon...'
     if (Test-Path 'addons/chart-indicators/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @(
             'run',
@@ -151,7 +158,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[6/10] Checking optional chart strategy addon...'
+    Write-Host '[7/11] Checking optional chart strategy addon...'
     if (Test-Path 'addons/chart-strategies/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @(
             'run',
@@ -163,7 +170,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[7/10] Checking optional chart runtime diagnostics addon...'
+    Write-Host '[8/11] Checking optional chart runtime diagnostics addon...'
     if (Test-Path 'addons/chart-diagnostics/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @(
             'run',
@@ -175,14 +182,14 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[8/10] Running production build...'
+    Write-Host '[9/11] Running production build...'
     Invoke-Native -FilePath 'npm' -Arguments @(
         'run',
         'build'
     )
 
     Write-Host ''
-    Write-Host '[9/10] Checking whitespace and repository cleanliness...'
+    Write-Host '[10/11] Checking whitespace and repository cleanliness...'
     Invoke-Native -FilePath 'git' -Arguments @(
         'diff',
         '--check'
@@ -208,7 +215,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[10/10] Verifying local main against origin/main...'
+    Write-Host '[11/11] Verifying local main against origin/main...'
 
     Invoke-Native -FilePath 'git' -Arguments @(
         'fetch',
