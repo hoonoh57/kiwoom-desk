@@ -6,18 +6,33 @@ import './styles/layout.css';
 import { AppContext } from './core/context';
 import { Workbench } from './shell/Workbench';
 
+type OptionalStrategyAddonModule = {
+  installChartStrategyAddon?: (ctx: AppContext) => { dispose?: () => void };
+};
+
+async function loadOptionalStrategyAddon(): Promise<OptionalStrategyAddonModule | undefined> {
+  // glob은 파일이 물리적으로 없으면 빈 객체가 된다. 따라서 addons/chart-strategies
+  // 폴더를 제거해도 base Workbench production build가 전략 모듈 resolve 때문에 깨지지 않는다.
+  const loaders = import.meta.glob('../addons/chart-strategies/register.ts') as Record<
+    string,
+    () => Promise<OptionalStrategyAddonModule>
+  >;
+  const load = loaders['../addons/chart-strategies/register.ts'];
+  if (!load) return undefined;
+  return load().catch(e => {
+    console.warn('차트 전략 추가기능 로드 실패. 전략 없이 계속합니다.', e);
+    return undefined;
+  });
+}
+
 async function bootstrap(): Promise<void> {
   // 선택적 차트 추가기능. 이 import를 제거하면 기본 차트만 남는다.
   await import('../addons/chart-indicators/register')
     .catch(e => console.warn('차트 지표 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
 
   // 전략 add-on은 전략 catalog/신호 marker/주문 실행기를 한 묶음으로 설치한다.
-  // import가 실패하거나 이 블록을 제거해도 기본 ChartForm/지표 add-on은 그대로 동작한다.
-  const strategyAddon = await import('../addons/chart-strategies/register')
-    .catch(e => {
-      console.warn('차트 전략 추가기능 로드 실패. 전략 없이 계속합니다.', e);
-      return undefined;
-    });
+  // 폴더가 없거나 로드에 실패해도 기본 ChartForm/지표 add-on은 그대로 동작한다.
+  const strategyAddon = await loadOptionalStrategyAddon();
 
   // 개발 중에는 실시간 증분 계측을 자동 로드한다.
   // production/preview에서는 ?chartDiag=1 일 때만 로드하며, import를 제거하면 완전히 빠진다.
@@ -33,7 +48,7 @@ async function bootstrap(): Promise<void> {
 
   const ctx = new AppContext();
   // 선택 add-on도 Workbench가 차트를 만들기 전에 동일 AppContext를 사용한다.
-  const strategyRuntime = strategyAddon?.installChartStrategyAddon(ctx);
+  const strategyRuntime = strategyAddon?.installChartStrategyAddon?.(ctx);
   (window as any).__ctx = ctx;
 
   const wb = new Workbench(ctx);
