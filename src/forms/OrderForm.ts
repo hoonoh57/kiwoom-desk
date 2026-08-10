@@ -1,5 +1,6 @@
 import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
+import { loadWorkbenchSettings } from '../settings';
 
 type Side = 'buy' | 'sell';
 
@@ -22,7 +23,11 @@ export class OrderForm extends ChildForm {
   private lastMsg = '';
 
   protected onInit(): void {
-    this.code = this.params.code ?? (this.ctx as any).state?.symbol?.code ?? '005930';
+    const settings = loadWorkbenchSettings();
+    this.code = this.params.code ?? (this.ctx as any).state?.symbol?.code ?? settings.general.defaultSymbol;
+    this.qty = String(this.params.qty ?? settings.order.defaultQuantity);
+    this.trdeTp = String(this.params.orderType ?? settings.order.defaultOrderType);
+    this.stex = String(this.params.exchange ?? settings.order.defaultExchange);
     if (this.params.side === 'sell' || this.params.apiId === 'kt10001') this.side = 'sell';
     this.setTitle('주문');
     this.render();
