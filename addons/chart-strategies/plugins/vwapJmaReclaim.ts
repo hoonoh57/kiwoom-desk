@@ -15,13 +15,11 @@ type Phase = 'blocked' | 'armed' | 'long';
 interface MachineState {
   phase: Phase;
   session: string;
-  armedIndex: number;
 }
 
 interface Feature {
   jma: number | null;
   vwap: number | null;
-  upper1: number | null;
 }
 
 function sessionOf(bar: ChartBar): string {
@@ -36,10 +34,6 @@ function sessionOf(bar: ChartBar): string {
 function valueOf(point: IndicatorPoint | null | undefined): number | null {
   const n = Number(point?.value);
   return Number.isFinite(n) ? n : null;
-}
-
-function boolParam(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
 }
 
 function numberParam(value: unknown, fallback: number, min: number, max: number): number {
@@ -62,9 +56,6 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
   const jmaPeriod = integerParam(params.jmaPeriod, 14, 1, 10_000);
   const jmaPhase = integerParam(params.jmaPhase, 50, -100, 100);
   const jmaPower = integerParam(params.jmaPower, 2, 1, 10_000);
-  const requireJmaAboveVwap = boolParam(params.requireJmaAboveVwap, false);
-  const maxEntrySigma = numberParam(params.maxEntrySigma, 1, -10, 10);
-  const armExpiryBars = integerParam(params.armExpiryBars, 12, 1, 10_000);
   const exitMode = String(params.exitMode ?? 'vwap-close');
 
   const jma = jmaPlugin.create({ period: jmaPeriod, phase: jmaPhase, power: jmaPower });
@@ -72,7 +63,7 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
     stdDev1: 1,
     stdDev2: 2,
     showValue: true,
-    showUpper1: true,
+    showUpper1: false,
     showLower1: false,
     showUpper2: false,
     showLower2: false,
@@ -82,12 +73,8 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
   let states: MachineState[] = [];
   let signalsByIndex: StrategySignal[][] = [];
 
-  const initial = (session: string): MachineState => ({
-    phase: 'blocked',
-    session,
-    armedIndex: -1,
-  });
-
+  const initial = (session: string): MachineState => ({ phase: 'blocked', session });
+  const armed = (session: string): MachineState => ({ phase: 'armed', session });
   const flatten = (): StrategySignal[] => signalsByIndex.flat();
 
   const evaluate = (
@@ -104,76 +91,65 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
       : initial(session);
     const signals: StrategySignal[] = [];
 
-    if (feature.jma === null || feature.vwap === null) return { state, signals };
+    if (feature.vwap === null) return { state, signals };
 
-    const prevJma = previousFeature?.jma;
-    const jmaSlope = prevJma !== null && prevJma !== undefined
-      ? feature.jma - prevJma
-      : 0;
-    const sigma = feature.upper1 !== null ? feature.upper1 - feature.vwap : 0;
-    const z = sigma > 0 ? (bar.close - feature.vwap) / sigma : 0;
+    const previousBar = index > 0 ? bars[index - 1] : null;
+    const previousVwap = previousFeature?.vwap;
+    const sameSession = !!previousBar && sessionOf(previousBar) === session;
+    const crossedDown = sameSession
+      && previousVwap !== null
+      && previousVwap !== undefined
+      && previousBar.close >= previousVwap
+      && bar.close < feature.vwap;
+    const crossedUp = sameSession
+      && previousVwap !== null
+      && previousVwap !== undefined
+      && previousBar.close <= previousVwap
+      && bar.close > feature.vwap;
+
+    const previousJma = previousFeature?.jma;
+    const jmaRising = feature.jma !== null
+      && previousJma !== null
+      && previousJma !== undefined
+      && feature.jma > previousJma;
 
     if (state.phase === 'blocked') {
-      if (bar.close < feature.vwap && jmaSlope > 0) {
-        state = { phase: 'armed', session, armedIndex: index };
+      if (crossedDown) {
+        state = armed(session);
         signals.push({
           time: bar.time,
           type: 'arm',
           price: bar.close,
-          reason: 'VWAP 아래에서 JMA 기울기 상승 전환',
+          reason: '종가 VWAP 하향돌파 · 상향 재돌파 대기',
         });
       }
       return { state, signals };
     }
 
     if (state.phase === 'armed') {
-      const age = index - state.armedIndex;
-      const previousBar = index > 0 ? bars[index - 1] : null;
-      const previousVwap = previousFeature?.vwap;
-      const reclaimed = !!previousBar
-        && previousVwap !== null
-        && previousVwap !== undefined
-        && previousBar.close <= previousVwap
-        && bar.close > feature.vwap;
-      const confirmed = reclaimed
-        && bar.close > feature.jma
-        && jmaSlope > 0
-        && (!requireJmaAboveVwap || feature.jma >= feature.vwap)
-        && z <= maxEntrySigma;
-
-      if (confirmed) {
-        state = { phase: 'long', session, armedIndex: state.armedIndex };
+      if (crossedUp && jmaRising) {
+        state = { phase: 'long', session };
         signals.push({
           time: bar.time,
           type: 'buy',
           price: bar.close,
-          reason: `VWAP 상향 재돌파 · Price>JMA · JMA상승 · z=${z.toFixed(2)}`,
-        });
-        return { state, signals };
-      }
-
-      // 재돌파 순간에 확인조건이 부족하면 나중에 오른 자리에서 추격하지 않는다.
-      // 다음 실제 VWAP 재돌파가 나오기 전까지 ARM 상태를 유지한다.
-      if (age > armExpiryBars || (jmaSlope <= 0 && bar.close < feature.jma)) {
-        state = initial(session);
-        signals.push({
-          time: bar.time,
-          type: 'fail',
-          price: bar.close,
-          reason: age > armExpiryBars ? 'ARM 유효봉 초과' : 'JMA 재하락으로 reclaim 실패',
+          reason: '종가 VWAP 상향 재돌파 · JMA 상승',
         });
       }
+      // 상향 재돌파 순간 JMA가 상승이 아니면 추격하지 않는다.
+      // ARM은 유지하고 다음 실제 VWAP 상향 재돌파 사건을 기다린다.
       return { state, signals };
     }
 
     const shouldExit = exitMode === 'jma-close'
-      ? bar.close < feature.jma
+      ? feature.jma !== null && bar.close < feature.jma
       : exitMode === 'jma-below-vwap'
-        ? feature.jma < feature.vwap && bar.close < feature.jma
+        ? feature.jma !== null && feature.jma < feature.vwap && bar.close < feature.jma
         : bar.close < feature.vwap;
 
     if (shouldExit) {
-      state = initial(session);
+      const rearm = crossedDown;
+      state = rearm ? armed(session) : initial(session);
       signals.push({
         time: bar.time,
         type: 'sell',
@@ -184,6 +160,14 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
             ? 'JMA<VWAP 및 종가 JMA 이탈'
             : '종가 VWAP 이탈',
       });
+      if (rearm) {
+        signals.push({
+          time: bar.time,
+          type: 'arm',
+          price: bar.close,
+          reason: '종가 VWAP 하향돌파 · 재진입 상향돌파 대기',
+        });
+      }
     }
     return { state, signals };
   };
@@ -193,7 +177,6 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
     const vwapData = vwap.reset(bars);
     const jm = pointMap(jmaData.value);
     const vm = pointMap(vwapData.value);
-    const um = pointMap(vwapData.upper1);
 
     features = [];
     states = [];
@@ -204,7 +187,6 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
       const feature: Feature = {
         jma: jm.has(time) ? jm.get(time)! : null,
         vwap: vm.has(time) ? vm.get(time)! : null,
-        upper1: um.has(time) ? um.get(time)! : null,
       };
       const result = evaluate(
         i,
@@ -237,7 +219,6 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
       const feature: Feature = {
         jma: valueOf(ju.value),
         vwap: valueOf(vu.value),
-        upper1: valueOf(vu.upper1),
       };
       const result = evaluate(
         index,
@@ -264,16 +245,13 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
 
 const plugin: StrategyPlugin = {
   id: 'vwap-jma-reclaim',
-  version: 2,
+  version: 3,
   label: 'VWAP-JMA Reclaim',
-  description: 'VWAP 아래 JMA 상승 ARM → 실제 VWAP 상향 재돌파 봉에서 JMA 상승 확인 BUY → 구조 이탈 SELL.',
+  description: '종가 VWAP 하향돌파 ARM → 종가 VWAP 상향 재돌파 + JMA 상승 BUY → 선택한 구조 이탈 SELL.',
   parameters: [
     { key: 'jmaPeriod', label: 'JMA 기간', type: 'integer', default: 14, min: 1, max: 10_000 },
     { key: 'jmaPhase', label: 'JMA Phase', type: 'integer', default: 50, min: -100, max: 100 },
     { key: 'jmaPower', label: 'JMA Power', type: 'integer', default: 2, min: 1, max: 10_000 },
-    { key: 'requireJmaAboveVwap', label: 'JMA>VWAP 추가확인(엄격)', type: 'boolean', default: false },
-    { key: 'maxEntrySigma', label: '최대 진입 σ', type: 'number', default: 1, min: -10, max: 10, step: 0.1 },
-    { key: 'armExpiryBars', label: 'ARM 유효봉', type: 'integer', default: 12, min: 1, max: 10_000 },
     {
       key: 'exitMode',
       label: '청산 기준',
@@ -287,11 +265,10 @@ const plugin: StrategyPlugin = {
     },
   ],
   migrateParams(params, fromVersion) {
-    if (fromVersion < 2) {
-      return {
-        ...params,
-        requireJmaAboveVwap: false,
-      };
+    if (fromVersion < 3) {
+      // v3에서는 지연 진입 필터(requireJmaAboveVwap/maxEntrySigma/armExpiryBars)를 폐기한다.
+      // catalog의 normalizeStrategyParams가 현재 parameters에 없는 과거 키를 제거한다.
+      return { ...params };
     }
     return params;
   },
