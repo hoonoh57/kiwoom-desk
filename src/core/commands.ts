@@ -153,7 +153,7 @@ export function registerCommands(ctx: AppContext): void {
 
   // 자주 쓰는 폼 단축키
   reg.register({ id: 'view.chart', title: '차트 열기', category: '보기', keybinding: 'ctrl+1',
-    run: () => dock()?.open('chart', { apiId: 'ka10081' }, {}) });
+    run: () => dock()?.open('chart', {}, {}) });
   reg.register({ id: 'view.stockInfo', title: '종목정보 열기', category: '보기', keybinding: 'ctrl+2',
     run: () => dock()?.open('stockInfo', { apiId: 'ka10001' }, {}) });
   reg.register({ id: 'view.account', title: '계좌 열기', category: '보기', keybinding: 'ctrl+3',
