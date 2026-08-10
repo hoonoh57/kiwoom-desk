@@ -7,12 +7,14 @@ import {
 } from '../../src/core/events';
 
 const SESSION_KEY = 'kiwoom-desk.strategy.positions.v1';
+const NO_PRICE_ORDER_TYPES = new Set(['3', '13', '23', '61', '81']);
 
 interface ArmPayload { source?: string; armed: boolean; confirmed?: boolean; }
 
 export class StrategyExecutionRuntime {
   private readonly source = 'strategy-execution-runtime';
   private readonly positions = new Map<string, StrategyPositionSnapshot>();
+  private readonly inFlight = new Set<string>();
   private readonly offs: Array<() => void> = [];
   private brokerArmed = false;
   private lastError = '';
@@ -32,6 +34,7 @@ export class StrategyExecutionRuntime {
   dispose(): void {
     for (const off of this.offs.splice(0)) off();
     if (this.publishFrame !== undefined) cancelAnimationFrame(this.publishFrame);
+    this.inFlight.clear();
     this.brokerArmed = false;
   }
 
@@ -116,6 +119,13 @@ export class StrategyExecutionRuntime {
       return;
     }
 
+    const actionKey = `${key}:${intent.side}`;
+    if (this.inFlight.has(actionKey)) {
+      this.ctx.log.warn(`전략 중복 주문 차단(in-flight): ${actionKey}`);
+      return;
+    }
+    this.inFlight.add(actionKey);
+
     const side = intent.side;
     const qty = side === 'sell' && existing ? Math.min(existing.qty, intent.qty) : intent.qty;
     const apiId = side === 'buy' ? 'kt10000' : 'kt10001';
@@ -124,11 +134,15 @@ export class StrategyExecutionRuntime {
     if (mockMode && intent.exchange !== 'KRX') {
       this.ctx.log.info(`전략 모의투자 거래소 정규화: ${intent.exchange} → KRX (${intent.code})`);
     }
+    const orderType = NO_PRICE_ORDER_TYPES.has(intent.orderType) ? intent.orderType : '3';
+    if (orderType !== intent.orderType) {
+      this.ctx.log.warn(`전략 주문유형 정규화: ${intent.orderType} → 3(시장가) · 주문단가 없는 전략 v1`);
+    }
     const body: Record<string, string> = {
       dmst_stex_tp: exchange,
       stk_cd: intent.code,
       ord_qty: String(qty),
-      trde_tp: intent.orderType || '3',
+      trde_tp: orderType,
     };
 
     try {
@@ -176,6 +190,8 @@ export class StrategyExecutionRuntime {
       if (orderNo) void this.reconcileFill(intent, qty, orderNo, side, 0);
     } catch (e: any) {
       this.reject(`전략 주문 예외: ${e?.message ?? e}`);
+    } finally {
+      this.inFlight.delete(actionKey);
     }
   }
 
