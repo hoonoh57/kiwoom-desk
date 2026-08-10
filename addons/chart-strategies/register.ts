@@ -1,4 +1,5 @@
 import type { AppContext } from '../../src/core/context';
+import { Topics, type StrategyPortfolioSnapshot } from '../../src/core/events';
 import { registerChartExtension } from '../../src/chart/extensions';
 import { StrategyHost } from './StrategyHost';
 import { installStrategyExecutionRuntime, type StrategyExecutionRuntime } from './execution';
@@ -6,6 +7,7 @@ import './strategy.css';
 
 let installed = false;
 let runtime: StrategyExecutionRuntime | undefined;
+let brokerStateBridge: (() => void) | undefined;
 
 /**
  * Workbench가 차트를 만들기 전에 한 번 호출한다.
@@ -17,5 +19,18 @@ export function installChartStrategyAddon(ctx: AppContext): StrategyExecutionRun
     installed = true;
   }
   runtime ??= installStrategyExecutionRuntime(ctx);
+
+  // 새 차트/전략 패널도 중앙 실행기의 실제 ARM 상태와 즉시 일치해야 한다.
+  brokerStateBridge ??= ctx.bus.on<StrategyPortfolioSnapshot>(
+    Topics.StrategyPortfolioChanged,
+    snapshot => {
+      ctx.bus.emit(Topics.StrategyBrokerState, {
+        source: 'strategy-broker-state-bridge',
+        armed: snapshot.brokerArmed,
+        mode: ctx.state.mode,
+      });
+    },
+  );
+
   return runtime;
 }
