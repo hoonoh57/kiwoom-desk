@@ -78,16 +78,16 @@ try {
 
     if (-not $SkipPull) {
         Write-Host ''
-        Write-Host '[1/13] Pulling origin/main with fast-forward only...'
+        Write-Host '[1/14] Pulling origin/main with fast-forward only...'
         Invoke-Native -FilePath 'git' -Arguments @('pull', '--ff-only', 'origin', 'main')
     }
     else {
         Write-Host ''
-        Write-Host '[1/13] Pull skipped.'
+        Write-Host '[1/14] Pull skipped.'
     }
 
     Write-Host ''
-    Write-Host '[2/13] Checking dependencies...'
+    Write-Host '[2/14] Checking dependencies...'
     $needsInstall = $Install -or -not (Test-Path 'node_modules')
     if ($needsInstall) {
         if (Test-Path 'package-lock.json') { Invoke-Native -FilePath 'npm' -Arguments @('ci') }
@@ -96,52 +96,56 @@ try {
     else { Write-Host 'node_modules exists; install skipped.' }
 
     Write-Host ''
-    Write-Host '[3/13] Running tick aggregation tests...'
+    Write-Host '[3/14] Running tick aggregation tests...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:tick')
 
     Write-Host ''
-    Write-Host '[4/13] Running Kiwoom REST rate-limit policy tests...'
+    Write-Host '[4/14] Running Kiwoom REST rate-limit policy tests...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:api')
 
     Write-Host ''
-    Write-Host '[5/13] Running watchlist persistence and form contract tests...'
+    Write-Host '[5/14] Running watchlist persistence and form contract tests...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:watchlist')
 
     Write-Host ''
-    Write-Host '[6/13] Running Workbench settings contract tests...'
+    Write-Host '[6/14] Running Workbench settings contract tests...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:settings')
 
     Write-Host ''
-    Write-Host '[7/13] Running central auto-trade monitor contract tests...'
+    Write-Host '[7/14] Running central auto-trade monitor contract tests...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:autotrade')
 
     Write-Host ''
-    Write-Host '[8/13] Checking optional chart indicator addon...'
+    Write-Host '[8/14] Running standard Workbench completion audit...'
+    Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:audit')
+
+    Write-Host ''
+    Write-Host '[9/14] Checking optional chart indicator addon...'
     if (Test-Path 'addons/chart-indicators/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:indicators')
     }
     else { Write-Host 'chart indicator addon not installed; indicator tests skipped.' }
 
     Write-Host ''
-    Write-Host '[9/13] Checking optional chart strategy addon...'
+    Write-Host '[10/14] Checking optional chart strategy addon...'
     if (Test-Path 'addons/chart-strategies/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:strategies')
     }
     else { Write-Host 'chart strategy addon not installed; strategy tests skipped.' }
 
     Write-Host ''
-    Write-Host '[10/13] Checking optional chart runtime diagnostics addon...'
+    Write-Host '[11/14] Checking optional chart runtime diagnostics addon...'
     if (Test-Path 'addons/chart-diagnostics/register.ts') {
         Invoke-Native -FilePath 'npm' -Arguments @('run', 'test:diagnostics')
     }
     else { Write-Host 'chart runtime diagnostics addon not installed; diagnostics tests skipped.' }
 
     Write-Host ''
-    Write-Host '[11/13] Running production build...'
+    Write-Host '[12/14] Running production build...'
     Invoke-Native -FilePath 'npm' -Arguments @('run', 'build')
 
     Write-Host ''
-    Write-Host '[12/13] Checking whitespace and repository cleanliness...'
+    Write-Host '[13/14] Checking whitespace and repository cleanliness...'
     Invoke-Native -FilePath 'git' -Arguments @('diff', '--check')
     Invoke-Native -FilePath 'git' -Arguments @('diff', '--cached', '--check')
 
@@ -154,7 +158,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '[13/13] Verifying local main against origin/main...'
+    Write-Host '[14/14] Verifying local main against origin/main...'
     Invoke-Native -FilePath 'git' -Arguments @('fetch', 'origin', 'main')
 
     $localHead = Get-GitSingleLine -Arguments @('rev-parse', 'HEAD')
