@@ -11,6 +11,14 @@ async function bootstrap(): Promise<void> {
   await import('../addons/chart-indicators/register')
     .catch(e => console.warn('차트 지표 추가기능 로드 실패. 기본 차트로 계속합니다.', e));
 
+  // 전략 add-on은 전략 catalog/신호 marker/주문 실행기를 한 묶음으로 설치한다.
+  // import가 실패하거나 이 블록을 제거해도 기본 ChartForm/지표 add-on은 그대로 동작한다.
+  const strategyAddon = await import('../addons/chart-strategies/register')
+    .catch(e => {
+      console.warn('차트 전략 추가기능 로드 실패. 전략 없이 계속합니다.', e);
+      return undefined;
+    });
+
   // 개발 중에는 실시간 증분 계측을 자동 로드한다.
   // production/preview에서는 ?chartDiag=1 일 때만 로드하며, import를 제거하면 완전히 빠진다.
   const chartDiagnosticsEnabled = import.meta.env.DEV
@@ -24,6 +32,10 @@ async function bootstrap(): Promise<void> {
   if (!host) throw new Error('#workbench 엘리먼트를 찾을 수 없습니다.');
 
   const ctx = new AppContext();
+  // 선택 add-on도 Workbench가 차트를 만들기 전에 동일 AppContext를 사용한다.
+  const strategyRuntime = strategyAddon?.installChartStrategyAddon(ctx);
+  (window as any).__ctx = ctx;
+
   const wb = new Workbench(ctx);
   wb.render(host);
 
@@ -37,7 +49,7 @@ async function bootstrap(): Promise<void> {
     })
     .catch(e => ctx.log.error(`프록시 서버 연결 실패: ${e?.message ?? e}`));
 
-  (window as any).__ctx = ctx;
+  window.addEventListener('beforeunload', () => strategyRuntime?.dispose?.());
 }
 
 void bootstrap();
