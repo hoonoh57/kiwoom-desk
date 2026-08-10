@@ -51,15 +51,12 @@ addons/chart-strategies/
     {
       "instanceId": "vwap-jma-reclaim-...",
       "strategyId": "vwap-jma-reclaim",
-      "pluginVersion": 2,
+      "pluginVersion": 3,
       "enabled": true,
       "params": {
         "jmaPeriod": 14,
         "jmaPhase": 50,
         "jmaPower": 2,
-        "requireJmaAboveVwap": false,
-        "maxEntrySigma": 1,
-        "armExpiryBars": 12,
         "exitMode": "vwap-close"
       },
       "execution": {
@@ -128,49 +125,86 @@ Lightweight Charts v5 series markers primitive를 기본 candlestick series에 �
 - ARM: 노란 원
 - BUY: 초록 상향 화살표
 - SELL: 빨간 하향 화살표
-- FAIL: 회색 원
+- FAIL: 회색 원(다른 전략이 사용할 수 있으나 VWAP-JMA v3 기본 진입에서는 사용하지 않음)
 
 marker 표시 여부는 전략 instance별로 끌 수 있다.
 
 ## 첫 전략: VWAP-JMA Reclaim
 
 이 전략은 완성된 수익전략이라는 가정이 아니라 검증 가능한 기준 구현이다.
+초기 버전에서는 진입조건을 최대한 단순하게 유지하고, 성과 차이는 우선 청산조건에서 비교한다.
 
-### v2 진입 계약
+### v3 진입 계약
 
-`Close > VWAP`이라는 상태와 `VWAP을 방금 상향 재돌파했다`는 사건을 구분한다.
-BUY는 반드시 실제 상향 재돌파 봉에서만 평가한다.
+VWAP cross를 사건으로 사용하고 JMA는 방향 확인만 담당한다.
 
 ```text
 BLOCKED
-  -> Close<VWAP에서 JMA slope 상승: ARM
+  -> 직전 Close >= 직전 VWAP
+     AND 현재 Close < 현재 VWAP
+     : 실제 VWAP 하향돌파 → ARM
 
 ARMED
   -> 직전 Close <= 직전 VWAP
-     AND 현재 Close > 현재 VWAP       : 실제 VWAP 상향 재돌파
-     AND 현재 Close > JMA
-     AND JMA slope > 0
-     AND maxEntrySigma 이하
-     AND 선택적으로 JMA >= VWAP      : BUY
+     AND 현재 Close > 현재 VWAP
+     : 실제 VWAP 상향 재돌파
+     AND 현재 JMA > 직전 JMA
+     : JMA 상승
+     → BUY
 
-  -> 재돌파 순간 확인조건이 부족하면 나중에 상승한 자리에서 추격 BUY하지 않는다.
-     다음 실제 VWAP 상향 재돌파를 기다린다.
+  -> 상향 재돌파 순간 JMA가 상승이 아니면 추격 BUY하지 않는다.
+     ARM을 유지하고 다음 실제 VWAP 상향 재돌파를 기다린다.
 
-  -> 유효봉 초과 또는 JMA 재하락      : FAIL
+  -> ARM 유효봉 만료 없음
+  -> 진입용 FAIL 없음
 
 LONG
-  -> 선택한 exitMode 구조 이탈        : SELL
+  -> 선택한 exitMode 구조 이탈 → SELL
 ```
 
-`requireJmaAboveVwap`은 v2에서 기본 `false`다.
-JMA는 VWAP보다 후행할 수 있으므로 기본 전략에서는 VWAP reclaim을 진입 트리거로 사용하고,
-JMA는 상승 방향과 가격이 JMA 위에 있는지만 확인한다.
+v3 기본 진입에서는 다음 지연 조건을 사용하지 않는다.
 
-v1 저장본의 `requireJmaAboveVwap=true`는 v2 로드 시 `false`로 마이그레이션한다.
-엄격 확인을 다시 켜는 것은 가능하지만, 이 경우 첫 reclaim에서 조건이 맞지 않으면
-JMA가 뒤늦게 VWAP 위로 올라온 시점에 추격하지 않고 다음 실제 reclaim을 기다린다.
+- `Close > JMA`
+- `JMA > VWAP`
+- `maxEntrySigma`
+- `armExpiryBars`
 
-모든 주요 문턱은 JSON parameter다. 실제 데이터 검증 결과에 따라 수정하고 버전업한다.
+이 조건들은 VWAP 재돌파라는 핵심 사건 이후 진입을 늦춰 상투 추격 가능성을 높일 수 있으므로 제거했다.
+필요성이 데이터로 검증되기 전에는 다시 기본 진입조건에 넣지 않는다.
+
+JMA 상승의 현재 정의는 가장 단순한 1봉 기울기다.
+
+```text
+JMA(t) > JMA(t-1)
+```
+
+다중봉 기울기, 강도, 거래량, DMI 같은 추가 조건은 별도 전략 버전 또는 선택적 실험 전략으로 검증한다.
+기본 전략의 진입계약을 직접 복잡하게 만들지 않는다.
+
+### 재진입
+
+기본 `vwap-close` 청산에서는 LONG 상태에서 종가가 VWAP을 하향돌파하면 SELL과 동시에 다음 reclaim을 기다리는 ARMED 상태로 전환한다.
+따라서 청산 직후 다시 VWAP을 상향돌파하면서 JMA가 상승하면 재진입 신호를 만들 수 있다.
+
+### 청산 실험
+
+초기 성능비교는 진입을 바꾸기보다 다음 청산조건을 우선 비교한다.
+
+- `vwap-close`: 종가 VWAP 이탈
+- `jma-close`: 종가 JMA 이탈
+- `jma-below-vwap`: JMA<VWAP + 종가 JMA 이탈
+
+진입은 동일하게 고정하고 청산만 바꿔 MFE, MAE, 실현수익, 보유시간 차이를 비교한다.
+
+### v1/v2 저장본 마이그레이션
+
+v3 로드 시 이전 저장본의 다음 파라미터는 현재 plugin parameter 목록에 없으므로 자동 제거된다.
+
+- `requireJmaAboveVwap`
+- `maxEntrySigma`
+- `armExpiryBars`
+
+사용자가 localStorage를 삭제하거나 전략을 다시 추가할 필요가 없다.
 
 ## 전략 플러그인 작성 원칙
 
@@ -193,9 +227,12 @@ append/replace 결과는 같은 데이터의 fresh reset 결과와 parity가 맞
 
 `npm run test:strategies`에서 최소 다음을 검사한다.
 
-- 전략의 deterministic ARM/BUY 발생
+- deterministic ARM/BUY 발생
+- 모든 ARM이 실제 VWAP 하향돌파 봉에만 발생
 - 모든 BUY가 실제 VWAP 상향 재돌파 봉에만 발생
-- v1 -> v2 parameter migration
+- 모든 BUY에서 JMA가 상승
+- VWAP-JMA v3 기본 진입에서 FAIL 미발생
+- v1/v2 저장 파라미터의 v3 정규화
 - append parity
 - replace parity
 - ChartForm에 전략 이름/주문 로직 하드코딩 없음
