@@ -11,11 +11,6 @@ export interface WorkbenchSettings {
   };
   chart: {
     defaultPeriod: SettingsChartPeriod;
-    defaultMinuteScope: string;
-    defaultTickScope: string;
-    adjustedPrice: boolean;
-    volumeRaw: boolean;
-    watchlistOpenPeriod: SettingsChartPeriod;
   };
   order: {
     defaultExchange: SettingsExchange;
@@ -25,8 +20,6 @@ export interface WorkbenchSettings {
 }
 
 const PERIODS = new Set<SettingsChartPeriod>(['tick', 'min', 'day', 'week', 'month', 'year']);
-const MINUTE_SCOPES = new Set(['1', '3', '5', '10', '15', '30', '60']);
-const TICK_SCOPES = new Set(['1', '3', '5', '10', '30', '60', '120', '240', '360', '480', '540', '720']);
 const EXCHANGES = new Set<SettingsExchange>(['KRX', 'NXT', 'SOR']);
 const ORDER_TYPES = new Set(['0', '3', '5', '6', '7', '10', '13', '20', '23']);
 
@@ -39,11 +32,6 @@ export function defaultWorkbenchSettings(): WorkbenchSettings {
     },
     chart: {
       defaultPeriod: 'day',
-      defaultMinuteScope: '5',
-      defaultTickScope: '120',
-      adjustedPrice: true,
-      volumeRaw: false,
-      watchlistOpenPeriod: 'day',
     },
     order: {
       defaultExchange: 'KRX',
@@ -83,15 +71,6 @@ export function normalizeWorkbenchSettings(value: unknown): WorkbenchSettings {
   const defaultPeriod = PERIODS.has(chart.defaultPeriod as SettingsChartPeriod)
     ? chart.defaultPeriod as SettingsChartPeriod
     : fallback.chart.defaultPeriod;
-  const watchlistOpenPeriod = PERIODS.has(chart.watchlistOpenPeriod as SettingsChartPeriod)
-    ? chart.watchlistOpenPeriod as SettingsChartPeriod
-    : fallback.chart.watchlistOpenPeriod;
-  const defaultMinuteScope = MINUTE_SCOPES.has(String(chart.defaultMinuteScope ?? ''))
-    ? String(chart.defaultMinuteScope)
-    : fallback.chart.defaultMinuteScope;
-  const defaultTickScope = TICK_SCOPES.has(String(chart.defaultTickScope ?? ''))
-    ? String(chart.defaultTickScope)
-    : fallback.chart.defaultTickScope;
   const defaultExchange = EXCHANGES.has(order.defaultExchange as SettingsExchange)
     ? order.defaultExchange as SettingsExchange
     : fallback.order.defaultExchange;
@@ -107,11 +86,6 @@ export function normalizeWorkbenchSettings(value: unknown): WorkbenchSettings {
     },
     chart: {
       defaultPeriod,
-      defaultMinuteScope,
-      defaultTickScope,
-      adjustedPrice: bool(chart.adjustedPrice, fallback.chart.adjustedPrice),
-      volumeRaw: bool(chart.volumeRaw, fallback.chart.volumeRaw),
-      watchlistOpenPeriod,
     },
     order: {
       defaultExchange,
