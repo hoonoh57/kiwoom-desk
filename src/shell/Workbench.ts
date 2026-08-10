@@ -9,12 +9,13 @@ interface ActivityItem { id: string; icon: string; title: string; formId?: strin
 
 const ACTIVITY: ActivityItem[] = [
   { id: 'explorer',  icon: 'files',       title: '탐색기' },
-  { id: 'chart',     icon: 'graph-line',  title: '차트',     formId: 'chart' },
-  { id: 'watchlist', icon: 'star',        title: '관심종목', formId: 'watchlist' },
-  { id: 'account',   icon: 'account',     title: '계좌',     formId: 'account',   params: { tab: 'balance' } },
-  { id: 'order',     icon: 'credit-card', title: '주문',     formId: 'order',     params: { side: 'buy' } },
-  { id: 'cond',      icon: 'filter',      title: '조건검색', formId: 'condition' },
-  { id: 'settings',  icon: 'gear',        title: '설정',     formId: 'settings' },
+  { id: 'chart',     icon: 'graph-line',  title: '차트',         formId: 'chart' },
+  { id: 'watchlist', icon: 'star',        title: '관심종목',     formId: 'watchlist' },
+  { id: 'account',   icon: 'account',     title: '계좌',         formId: 'account',   params: { tab: 'balance' } },
+  { id: 'order',     icon: 'credit-card', title: '주문',         formId: 'order',     params: { side: 'buy' } },
+  { id: 'cond',      icon: 'filter',      title: '조건검색',     formId: 'condition' },
+  { id: 'autotrade', icon: 'rocket',      title: '자동매매 관제', formId: 'autotrade' },
+  { id: 'settings',  icon: 'gear',        title: '설정',         formId: 'settings' },
 ];
 
 const MENUS: Array<{ label: string; items: Array<{ label: string; cmd?: string; sep?: boolean }> }> = [
@@ -36,6 +37,8 @@ const MENUS: Array<{ label: string; items: Array<{ label: string; cmd?: string; 
     { label: '계좌 잔고', cmd: 'view.account' },
     { label: '미체결', cmd: 'tr.ka10075' },
     { label: '조건검색', cmd: 'view.open.condition' },
+    { label: '', sep: true },
+    { label: '자동매매 관제', cmd: 'view.open.autotrade' },
   ]},
   { label: '보기', items: [
     { label: '출력', cmd: 'view.output' },
