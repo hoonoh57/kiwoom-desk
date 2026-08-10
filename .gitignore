@@ -10,3 +10,5 @@ npm-debug.log*
 
 .token-cache.json
 *.token-cache.json
+.watchlists.json
+.watchlists.json.tmp
