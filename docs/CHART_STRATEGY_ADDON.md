@@ -7,6 +7,26 @@
 
 전략 add-on을 제거해도 기본 캔들/거래량/지표 차트는 그대로 동작해야 한다.
 
+## 현재 완료선
+
+이 저장소에서 전략 기능의 목적은 **수익전략 완성**이 아니라 **범용 전략 add-on 실행 틀 제공**이다.
+
+`VWAP-JMA Reclaim`은 앞으로 수익성을 계속 최적화하는 production 전략이 아니라 다음 연결을 검증하는
+**Reference Strategy / Validation Sample**로 동결한다.
+
+```text
+strategy plugin
+  -> parameter / JSON
+  -> reset + append/replace
+  -> ARM/BUY/SELL marker
+  -> signal / paper / broker TradeIntent
+  -> 중앙 StrategyExecutionRuntime
+  -> AccountForm 전략 매매 현황
+```
+
+새로운 진입필터, 청산 최적화, 대장주 선정, 특정 틱봉/시간대 최적화 등 실제 전략 연구는
+별도 strategy-lab/trading-strategies 계층에서 수행하고 기본 Workbench를 오염시키지 않는다.
+
 ## 물리적 경계
 
 ```text
@@ -15,16 +35,57 @@ src/forms/ChartForm.ts
   - 기존 ChartExtension 수명주기만 전달한다.
 
 addons/chart-strategies/
-  catalog.ts               전략 자동 발견
+  api.ts                   외부 전략용 public registration API
+  registry.ts              Vite와 독립된 strategy plugin registry
+  catalog.ts               로컬 plugins/*.ts 자동 발견
   types.ts                 전략/JSON 계약
   StrategyHost.ts          UI, JSON, 차트 marker, 확정봉 TradeIntent
   execution.ts             signal/paper/broker 중앙 실행기
-  register.ts              단일 설치점
-  plugins/*.ts             실제 전략
+  register.ts              전략 add-on 설치점
+  plugins/*.ts             로컬/reference 전략
 ```
 
-`src/main.ts`의 `addons/chart-strategies/register` dynamic import 및
-`installChartStrategyAddon(ctx)` 호출을 제거하면 전략 add-on과 전략 주문 실행기가 빠진다.
+`src/main.ts`는 전략 add-on을 직접 정적 import하지 않고 optional `import.meta.glob` loader로 찾는다.
+따라서 `addons/chart-strategies/` 폴더가 물리적으로 없는 배포에서도 base Workbench가 전략 모듈 resolve 때문에
+실패하지 않는 경계를 유지한다.
+
+기본 `tsconfig.json`의 TypeScript root도 `src`, `server`만 포함하고 `addons`는 포함하지 않는다.
+
+## 외부 전략 등록 포트
+
+저장소 내부 전략은 기존처럼 `plugins/*.ts`에 넣으면 자동 발견된다.
+외부 전략 패키지/add-on은 ChartForm이나 catalog switch를 수정하지 않고 public API를 사용한다.
+
+```ts
+import {
+  registerStrategyPlugin,
+  type StrategyPlugin,
+} from './addons/chart-strategies/api';
+
+const plugin: StrategyPlugin = {
+  id: 'my-strategy',
+  version: 1,
+  label: 'My Strategy',
+  parameters: [],
+  create() {
+    return {
+      reset(bars) { return { signals: [] }; },
+      update(bars, change) { return { signals: [] }; },
+    };
+  },
+};
+
+const unregister = registerStrategyPlugin(plugin);
+```
+
+등록 ID는 전역 strategy catalog에서 유일해야 하며 중복 ID는 즉시 오류다.
+`registerStrategyPlugin()`은 disposer를 반환하므로 등록 소유자가 catalog 등록을 회수할 수 있다.
+
+현재 Workbench 계약에서는 외부 전략 add-on을 **Workbench가 차트를 만들기 전에 등록**하는 것을 기본으로 한다.
+차트별 전략 적용/비적용은 StrategyHost의 instance enabled/remove 기능으로 처리한다.
+
+production 전략 목록을 오염시키지 않기 위해 범용성 검증용 두 번째 전략은 `tests/strategyAddon.test.ts` 안에서만
+동적으로 등록/제거한다.
 
 ## 전략 저장 계약
 
@@ -129,10 +190,10 @@ Lightweight Charts v5 series markers primitive를 기본 candlestick series에 �
 
 marker 표시 여부는 전략 instance별로 끌 수 있다.
 
-## 첫 전략: VWAP-JMA Reclaim
+## Reference Strategy: VWAP-JMA Reclaim
 
-이 전략은 완성된 수익전략이라는 가정이 아니라 검증 가능한 기준 구현이다.
-초기 버전에서는 진입조건을 최대한 단순하게 유지하고, 성과 차이는 우선 청산조건에서 비교한다.
+이 전략은 완성된 수익전략이라는 가정이 아니라 플랫폼 전체 연결을 검증하는 기준 구현이다.
+이 저장소에서는 v3 진입계약을 기준으로 동결하며, 이후 수익성 개선을 이유로 기본 프레임워크를 변경하지 않는다.
 
 ### v3 진입 계약
 
@@ -169,32 +230,26 @@ v3 기본 진입에서는 다음 지연 조건을 사용하지 않는다.
 - `maxEntrySigma`
 - `armExpiryBars`
 
-이 조건들은 VWAP 재돌파라는 핵심 사건 이후 진입을 늦춰 상투 추격 가능성을 높일 수 있으므로 제거했다.
-필요성이 데이터로 검증되기 전에는 다시 기본 진입조건에 넣지 않는다.
-
 JMA 상승의 현재 정의는 가장 단순한 1봉 기울기다.
 
 ```text
 JMA(t) > JMA(t-1)
 ```
 
-다중봉 기울기, 강도, 거래량, DMI 같은 추가 조건은 별도 전략 버전 또는 선택적 실험 전략으로 검증한다.
-기본 전략의 진입계약을 직접 복잡하게 만들지 않는다.
-
 ### 재진입
 
 기본 `vwap-close` 청산에서는 LONG 상태에서 종가가 VWAP을 하향돌파하면 SELL과 동시에 다음 reclaim을 기다리는 ARMED 상태로 전환한다.
 따라서 청산 직후 다시 VWAP을 상향돌파하면서 JMA가 상승하면 재진입 신호를 만들 수 있다.
 
-### 청산 실험
+### 청산 옵션
 
-초기 성능비교는 진입을 바꾸기보다 다음 청산조건을 우선 비교한다.
+Reference Strategy는 프레임워크 검증을 위해 다음 파라미터 contract만 유지한다.
 
 - `vwap-close`: 종가 VWAP 이탈
 - `jma-close`: 종가 JMA 이탈
 - `jma-below-vwap`: JMA<VWAP + 종가 JMA 이탈
 
-진입은 동일하게 고정하고 청산만 바꿔 MFE, MAE, 실현수익, 보유시간 차이를 비교한다.
+이 옵션들의 실제 수익성 비교·최적화는 이 저장소의 완료조건이 아니다.
 
 ### v1/v2 저장본 마이그레이션
 
@@ -208,8 +263,10 @@ v3 로드 시 이전 저장본의 다음 파라미터는 현재 plugin parameter
 
 ## 전략 플러그인 작성 원칙
 
-새 전략은 `addons/chart-strategies/plugins/<name>.ts` 하나로 추가한다.
-Catalog는 `plugins/*.ts`를 자동 발견하므로 ChartForm이나 중앙 switch 문을 수정하지 않는다.
+새 전략은 로컬이라면 `addons/chart-strategies/plugins/<name>.ts`, 외부라면 `api.ts`의
+`registerStrategyPlugin()` 포트로 추가한다.
+
+ChartForm이나 중앙 switch 문을 수정하지 않는다.
 
 전략 계산기는 반드시:
 
@@ -227,7 +284,7 @@ append/replace 결과는 같은 데이터의 fresh reset 결과와 parity가 맞
 
 `npm run test:strategies`에서 최소 다음을 검사한다.
 
-- deterministic ARM/BUY 발생
+- Reference VWAP-JMA deterministic ARM/BUY 발생
 - 모든 ARM이 실제 VWAP 하향돌파 봉에만 발생
 - 모든 BUY가 실제 VWAP 상향 재돌파 봉에만 발생
 - 모든 BUY에서 JMA가 상승
@@ -235,9 +292,15 @@ append/replace 결과는 같은 데이터의 fresh reset 결과와 parity가 맞
 - v1/v2 저장 파라미터의 v3 정규화
 - append parity
 - replace parity
+- 외부 test-only 전략의 register/list/unregister
+- duplicate strategy ID 차단
 - ChartForm에 전략 이름/주문 로직 하드코딩 없음
-- add-on 단일 removable 등록점
+- strategy add-on optional glob 설치 경계
+- base TypeScript roots에서 addons 제외
 - broker confirmed ARM gate
 - 매수/매도 API 경로
 - 주문 체결확인 API 경로
 - AccountForm 전략 portfolio 연동
+
+이 검증이 통과하면 Strategy Add-on Framework는 이 저장소에서 DONE으로 취급하고,
+다음 표준 Workbench 기능(Watchlist/Settings/AutoTrade 관제)으로 이동한다.
