@@ -266,9 +266,12 @@ const plugin: StrategyPlugin = {
   ],
   migrateParams(params, fromVersion) {
     if (fromVersion < 3) {
-      // v3에서는 지연 진입 필터(requireJmaAboveVwap/maxEntrySigma/armExpiryBars)를 폐기한다.
-      // catalog의 normalizeStrategyParams가 현재 parameters에 없는 과거 키를 제거한다.
-      return { ...params };
+      const migrated: StrategyParams = {};
+      for (const key of ['jmaPeriod', 'jmaPhase', 'jmaPower', 'exitMode'] as const) {
+        const value = params[key];
+        if (value !== undefined) migrated[key] = value;
+      }
+      return migrated;
     }
     return params;
   },
