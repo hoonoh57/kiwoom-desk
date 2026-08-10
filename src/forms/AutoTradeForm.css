@@ -1,0 +1,107 @@
+.autotrade-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg, #1e1e1e);
+  color: var(--fg, #d4d4d4);
+}
+
+.autotrade-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #333;
+}
+
+.autotrade-title {
+  font-size: 15px;
+  color: #fff;
+}
+
+.autotrade-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #8f8f8f;
+}
+
+.autotrade-runtime,
+.autotrade-broker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+
+.autotrade-runtime.ok {
+  color: #4ec9b0;
+  background: rgba(78, 201, 176, .08);
+  border: 1px solid rgba(78, 201, 176, .3);
+}
+
+.autotrade-runtime.off {
+  color: #9a9a9a;
+  background: rgba(154, 154, 154, .06);
+  border: 1px solid rgba(154, 154, 154, .22);
+}
+
+.autotrade-broker.safe {
+  color: #9cdcfe;
+  background: rgba(156, 220, 254, .06);
+  border: 1px solid rgba(156, 220, 254, .25);
+}
+
+.autotrade-broker.danger {
+  color: #f48771;
+  background: rgba(244, 135, 113, .08);
+  border: 1px solid rgba(244, 135, 113, .35);
+}
+
+.autotrade-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 14px;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.autotrade-note {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: #9b9b9b;
+  background: #202020;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.autotrade-section {
+  min-height: 0;
+  padding: 0 12px 8px;
+}
+
+.autotrade-section.signals {
+  flex: 1;
+  overflow: auto;
+}
+
+.autotrade-grid .left {
+  text-align: left;
+}
+
+.autotrade-error {
+  margin: 0 12px 12px;
+}
+
+.autotrade-form .grid-wrap {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.autotrade-section.signals .grid-wrap {
+  max-height: none;
+}
