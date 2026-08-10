@@ -1,0 +1,27 @@
+.chart-strategy-addon{position:relative;display:inline-flex;align-items:center;gap:2px}
+.chart-strategy-button.on{color:#fff;background:#5a3b73}
+.chart-strategy-count{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#5a3b73;color:#e6d5f5;font-size:10px;line-height:16px;text-align:center}
+.chart-strategy-panel{position:absolute;z-index:125;top:calc(100% + 6px);right:0;width:470px;max-width:min(470px,calc(100vw - 24px));max-height:min(680px,78vh);overflow:auto;padding:8px;background:var(--bg-alt);border:1px solid #54505a;border-radius:4px;box-shadow:0 6px 18px #0009;color:var(--fg)}
+.chart-strategy-panel[hidden]{display:none}
+.strategy-arm-row,.strategy-add-row{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.strategy-arm-row span{font-size:10px;color:var(--fg-dim)}
+.strategy-add-row select{flex:1;min-width:0}
+.strategy-instance-list{display:grid;gap:7px}
+.strategy-instance{border:1px solid var(--border);border-radius:3px;padding:7px;background:var(--bg)}
+.strategy-instance.missing{border-color:#684b4b}
+.strategy-instance-head{display:flex;align-items:center;gap:6px}
+.strategy-instance-head>.lnk:last-child{margin-left:auto}
+.strategy-instance-id{color:var(--fg-dim);font-family:var(--mono);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.strategy-desc{margin-top:4px;color:var(--fg-dim);font-size:10px;line-height:1.4}
+.strategy-exec,.strategy-params{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:7px}
+.strategy-exec{padding-top:7px;border-top:1px dashed var(--border)}
+.strategy-exec>label,.strategy-params>label{display:flex;flex-direction:column;gap:3px;color:var(--fg-dim);font-size:10px}
+.strategy-exec .chk,.strategy-params .chk{flex-direction:row;align-items:center}
+.strategy-exec input,.strategy-exec select,.strategy-params input,.strategy-params select{width:100%;min-width:0;font-family:var(--mono)}
+.strategy-empty{padding:12px;color:var(--fg-dim);text-align:center}
+.strategy-json{margin-top:8px;border-top:1px solid var(--border);padding-top:6px}
+.strategy-json summary{cursor:pointer;color:var(--fg-dim);font-size:11px}
+.strategy-json textarea{width:100%;height:170px;margin-top:6px;resize:vertical;font-family:var(--mono);font-size:10px;color:#ce9178;background:#1e1e1e}
+.strategy-json-actions{display:flex;align-items:center;gap:6px;margin-top:5px}
+.strategy-message{min-height:16px;margin-top:6px;color:var(--warn);font-size:10px;white-space:pre-wrap}
+@media (max-width:700px){.chart-strategy-panel{right:-80px;width:360px}.strategy-exec,.strategy-params{grid-template-columns:1fr}}
