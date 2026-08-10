@@ -61,6 +61,7 @@ export const Topics = {
   ConnectionChanged: 'conn.changed',
   WsChanged: 'ws.changed',
   Log: 'log.append',
+  WatchlistChanged: 'watchlist.changed',
 
   // 선택적 strategy add-on과 중앙 계좌현황 사이의 중립 계약.
   StrategySignal: 'strategy.signal',
@@ -78,6 +79,11 @@ export interface RealtimePayload extends Broadcast {
   type?: string;
   item?: string;
   values?: Record<string, string>;
+}
+export interface WatchlistChangedPayload extends Broadcast {
+  revision: number;
+  groups: number;
+  items: number;
 }
 
 export type StrategyExecutionMode = 'signal' | 'paper' | 'broker';
