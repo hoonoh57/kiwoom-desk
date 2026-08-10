@@ -80,8 +80,6 @@ export function normalizeWatchlistViewConfig(value: unknown): WatchlistViewConfi
   const visible = Array.isArray(row.visibleColumns)
     ? row.visibleColumns.filter((id): id is WatchlistColumnId => COLUMN_IDS.has(id as WatchlistColumnId))
     : fallback.visibleColumns;
-  // code/name 중 하나도 없거나 actions 같은 필수 조작열까지 모두 꺼져도 데이터는 안전하지만
-  // 최소 한 컬럼은 남겨 빈 테이블이 되지 않게 한다.
   const visibleColumns = Array.from(new Set(visible.length ? visible : fallback.visibleColumns));
   const rawSort = row.sort as Partial<WatchlistSortSpec> | null | undefined;
   const sort = rawSort
@@ -143,17 +141,16 @@ function sortableValue(
   }
 }
 
-function compareValue(a: string | number | undefined, b: string | number | undefined): number {
-  const missingA = a === undefined || (typeof a === 'number' && !Number.isFinite(a));
-  const missingB = b === undefined || (typeof b === 'number' && !Number.isFinite(b));
-  if (missingA && missingB) return 0;
-  if (missingA) return 1;
-  if (missingB) return -1;
+function missing(value: string | number | undefined): boolean {
+  return value === undefined || (typeof value === 'number' && !Number.isFinite(value));
+}
+
+function comparePresentValue(a: string | number, b: string | number): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   return String(a).localeCompare(String(b), 'ko-KR', { numeric: true });
 }
 
-/** 화면 정렬은 저장된 item.order를 변경하지 않는다. */
+/** 화면 정렬은 저장된 item.order를 변경하지 않는다. 빈 값은 정렬방향과 무관하게 항상 마지막이다. */
 export function sortWatchlistItems(
   items: readonly WatchlistItem[],
   config: WatchlistViewConfig,
@@ -164,7 +161,14 @@ export function sortWatchlistItems(
   const { column, direction } = config.sort;
   const sign = direction === 'asc' ? 1 : -1;
   return rows.sort((a, b) => {
-    const compared = compareValue(sortableValue(column, a, quoteFor(a.code)), sortableValue(column, b, quoteFor(b.code)));
+    const av = sortableValue(column, a, quoteFor(a.code));
+    const bv = sortableValue(column, b, quoteFor(b.code));
+    const missingA = missing(av);
+    const missingB = missing(bv);
+    if (missingA && missingB) return a.order - b.order;
+    if (missingA) return 1;
+    if (missingB) return -1;
+    const compared = comparePresentValue(av as string | number, bv as string | number);
     if (compared !== 0) return compared * sign;
     return a.order - b.order;
   });
