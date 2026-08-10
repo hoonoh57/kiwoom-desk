@@ -1,6 +1,7 @@
 import type { AppContext } from './context';
 import { formEntries, getFormMeta } from '../forms/registry';
 import { TR_FLAT } from '../api/endpoints';
+import { loadWorkbenchSettings } from '../settings';
 
 export interface Command {
   id: string;
@@ -26,7 +27,6 @@ export class CommandRegistry {
   private listeners = new Set<() => void>();
   private detachers: Array<() => void> = [];
 
-  /* ---------- 등록 ---------- */
   register(cmd: Command): () => void;
   register(id: string, title: string, run: (...a: any[]) => any, category?: string, keybinding?: string): () => void;
   register(a: Command | string, title?: string, run?: (...x: any[]) => any, category?: string, keybinding?: string): () => void {
@@ -44,7 +44,6 @@ export class CommandRegistry {
   has(id: string): boolean { return this.map.has(id); }
   get(id: string): Command | undefined { return this.map.get(id); }
 
-  /* ---------- 열거 (여러 이름 호환) ---------- */
   list(): Command[] { return Array.from(this.map.values()); }
   all(): Command[] { return this.list(); }
   getAll(): Command[] { return this.list(); }
@@ -56,7 +55,6 @@ export class CommandRegistry {
   values(): IterableIterator<Command> { return this.map.values(); }
   [Symbol.iterator]() { return this.map.entries(); }
 
-  /* ---------- 실행 ---------- */
   execute(id: string, ...args: any[]): any {
     const c = this.map.get(id);
     if (!c) { console.warn(`[commands] 없는 커맨드: ${id}`); return; }
@@ -82,14 +80,10 @@ export class CommandRegistry {
   }
   private changed(): void { this.listeners.forEach(f => { try { f(); } catch { /* ignore */ } }); }
 
-  /* ---------- 키보드 바인딩 ---------- */
-  /** 전역 키 핸들러 부착. Workbench.render() 에서 호출. */
   attachKeyboard(target: HTMLElement | Document | Window = document): () => void {
     const handler = (ev: Event) => {
       const e = ev as KeyboardEvent;
       if (!e.key) return;
-
-      // 입력 중에는 단축키를 가로채지 않음 (Ctrl/Alt 조합은 예외)
       const t = e.target as HTMLElement | null;
       const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const combo = normalizeCombo(e);
@@ -109,7 +103,6 @@ export class CommandRegistry {
     return detach;
   }
 
-  /** 별칭 */
   attachKeybindings(target?: HTMLElement | Document | Window): () => void { return this.attachKeyboard(target); }
   bindKeys(target?: HTMLElement | Document | Window): () => void { return this.attachKeyboard(target); }
 
@@ -124,12 +117,11 @@ export class CommandRegistry {
   }
 }
 
-/* ---------- 기본 커맨드 ---------- */
 export function registerCommands(ctx: AppContext): void {
   const reg = ctx.commands;
   const dock = () => (ctx as any).dock;
+  const chartParams = () => ({ period: loadWorkbenchSettings().chart.defaultPeriod });
 
-  // 폼 열기
   for (const [formId] of formEntries()) {
     const meta = getFormMeta(formId);
     if (meta.hidden) continue;
@@ -137,11 +129,14 @@ export function registerCommands(ctx: AppContext): void {
       id: `view.open.${formId}`,
       title: `열기: ${meta.title}`,
       category: meta.category ?? '보기',
-      run: () => dock()?.open(formId, { ...(meta.defaultParams ?? {}) }, {}),
+      run: () => dock()?.open(
+        formId,
+        formId === 'chart' ? chartParams() : { ...(meta.defaultParams ?? {}) },
+        {},
+      ),
     });
   }
 
-  // TR 실행
   for (const tr of TR_FLAT) {
     reg.register({
       id: `tr.${tr.apiId}`,
@@ -151,9 +146,8 @@ export function registerCommands(ctx: AppContext): void {
     });
   }
 
-  // 자주 쓰는 폼 단축키
   reg.register({ id: 'view.chart', title: '차트 열기', category: '보기', keybinding: 'ctrl+1',
-    run: () => dock()?.open('chart', {}, {}) });
+    run: () => dock()?.open('chart', chartParams(), {}) });
   reg.register({ id: 'view.stockInfo', title: '종목정보 열기', category: '보기', keybinding: 'ctrl+2',
     run: () => dock()?.open('stockInfo', { apiId: 'ka10001' }, {}) });
   reg.register({ id: 'view.account', title: '계좌 열기', category: '보기', keybinding: 'ctrl+3',
@@ -163,7 +157,6 @@ export function registerCommands(ctx: AppContext): void {
   reg.register({ id: 'view.output', title: '출력 패널 열기', category: '보기', keybinding: 'ctrl+`',
     run: () => dock()?.open('output', {}, { direction: 'below' }) });
 
-  // 레이아웃
   reg.register({ id: 'layout.save', title: '레이아웃 저장', category: '레이아웃', keybinding: 'ctrl+s',
     run: () => { dock()?.saveLayout(); ctx.log.info('레이아웃 저장됨'); } });
   reg.register({ id: 'layout.reset', title: '레이아웃 초기화', category: '레이아웃',
@@ -175,7 +168,6 @@ export function registerCommands(ctx: AppContext): void {
   reg.register({ id: 'layout.closeAll', title: '모든 패널 닫기', category: '레이아웃',
     run: () => dock()?.closeAll() });
 
-  // 연결
   reg.register({ id: 'conn.status', title: '연결 상태 확인', category: '연결',
     run: async () => {
       try {
@@ -189,7 +181,6 @@ export function registerCommands(ctx: AppContext): void {
   ctx.log.debug(`커맨드 ${reg.size}개 등록`);
 }
 
-/** 함수형 호출도 계속 지원 */
 export function attachKeybindings(ctx: AppContext, target: HTMLElement | Document = document): () => void {
   return ctx.commands.attachKeyboard(target);
 }
