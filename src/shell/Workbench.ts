@@ -7,12 +7,13 @@ import { Topics } from '../core/events';
 interface ActivityItem { id: string; icon: string; title: string; formId?: string; params?: any; }
 
 const ACTIVITY: ActivityItem[] = [
-  { id: 'explorer', icon: 'files',       title: '탐색기' },
-  { id: 'chart',    icon: 'graph-line',  title: '차트',     formId: 'chart',     params: { apiId: 'ka10081' } },
-  { id: 'account',  icon: 'account',     title: '계좌',     formId: 'account',   params: { tab: 'balance' } },
-  { id: 'order',    icon: 'credit-card', title: '주문',     formId: 'order',     params: { side: 'buy' } },
-  { id: 'cond',     icon: 'filter',      title: '조건검색', formId: 'condition' },
-  { id: 'settings', icon: 'gear',        title: '설정',     formId: 'settings' },
+  { id: 'explorer',  icon: 'files',       title: '탐색기' },
+  { id: 'chart',     icon: 'graph-line',  title: '차트',     formId: 'chart',     params: { apiId: 'ka10081' } },
+  { id: 'watchlist', icon: 'star',        title: '관심종목', formId: 'watchlist' },
+  { id: 'account',   icon: 'account',     title: '계좌',     formId: 'account',   params: { tab: 'balance' } },
+  { id: 'order',     icon: 'credit-card', title: '주문',     formId: 'order',     params: { side: 'buy' } },
+  { id: 'cond',      icon: 'filter',      title: '조건검색', formId: 'condition' },
+  { id: 'settings',  icon: 'gear',        title: '설정',     formId: 'settings' },
 ];
 
 const MENUS: Array<{ label: string; items: Array<{ label: string; cmd?: string; sep?: boolean }> }> = [
@@ -25,6 +26,7 @@ const MENUS: Array<{ label: string; items: Array<{ label: string; cmd?: string; 
   { label: '조회', items: [
     { label: '종목정보', cmd: 'view.stockInfo' },
     { label: '차트', cmd: 'view.chart' },
+    { label: '관심종목', cmd: 'view.open.watchlist' },
     { label: '거래대금 상위', cmd: 'tr.ka10032' },
     { label: '전일대비등락률 상위', cmd: 'tr.ka10027' },
   ]},
