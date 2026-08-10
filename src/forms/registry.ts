@@ -13,6 +13,7 @@ import { OrderForm } from './OrderForm';
 import { PlaceholderForm } from './PlaceholderForm';
 import { ConditionForm } from './ConditionForm';
 import { WatchlistForm } from './WatchlistForm';
+import { SettingsForm } from './SettingsForm';
 
 export type FormFactory = (ctx: AppContext, params: Record<string, any>) => ChildForm;
 
@@ -47,7 +48,7 @@ export const FORM_META: Record<string, FormMeta> = {
   log:       { title: '로그',      icon: 'list-flat',    category: '보기', instance: 'singleton' },
   stockInfo: { title: '종목정보',  icon: 'symbol-class', category: '조회', instance: 'per-api', defaultParams: { apiId: 'ka10001' } },
   trRunner:  { title: 'TR 실행기', icon: 'run-all',      category: '조회', instance: 'per-api', hidden: true },
-  chart:     { title: '차트',      icon: 'graph-line',   category: '조회', instance: 'per-api', defaultParams: { apiId: 'ka10081' } },
+  chart:     { title: '차트',      icon: 'graph-line',   category: '조회', instance: 'per-api' },
   account:   { title: '계좌',      icon: 'account',      category: '거래', instance: 'singleton', defaultParams: { tab: 'balance' } },
   order:     { title: '주문',      icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy' } },
   condition: { title: '조건검색',  icon: 'filter',       category: '거래', instance: 'singleton' },
@@ -80,7 +81,7 @@ const RAW: Record<string, FormFactory> = {
   condition: (c, p) => new ConditionForm(c, p),
   watchlist: (c, p) => new WatchlistForm(c, p),
   autotrade: ph('autotrade'),
-  settings:  ph('settings'),
+  settings:  (c, p) => new SettingsForm(c, p),
 };
 
 /* ---------- Map 호환 레지스트리 ---------- */
