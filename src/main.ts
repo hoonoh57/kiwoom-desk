@@ -17,7 +17,7 @@ async function loadOptionalStrategyAddon(): Promise<OptionalStrategyAddonModule 
     string,
     () => Promise<OptionalStrategyAddonModule>
   >;
-  const load = loaders['../addons/chart-strategies/register.ts'];
+  const load = Object.values(loaders)[0];
   if (!load) return undefined;
   return load().catch(e => {
     console.warn('차트 전략 추가기능 로드 실패. 전략 없이 계속합니다.', e);
