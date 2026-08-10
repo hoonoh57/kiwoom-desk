@@ -54,8 +54,17 @@
   color: #d7ba7d;
 }
 
+.watch-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .watch-body {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -66,7 +75,7 @@
 }
 
 .watch-grid {
-  min-width: 940px;
+  min-width: max-content;
 }
 
 .watch-grid th,
@@ -74,9 +83,9 @@
   white-space: nowrap;
 }
 
-.watch-grid td.watch-name {
+.watch-grid td.watch-name,
+.watch-grid td.watch-source {
   text-align: left;
-  min-width: 110px;
 }
 
 .watch-note {
@@ -101,11 +110,16 @@
   cursor: pointer;
 }
 
-.watch-actions .mini:hover {
+.watch-actions .mini:hover:not(:disabled) {
   background: #3a3a3a;
 }
 
-.watch-actions .mini.danger:hover {
+.watch-actions .mini:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.watch-actions .mini.danger:hover:not(:disabled) {
   background: #5a2a2a;
   border-color: #7a3b3b;
 }
@@ -118,7 +132,80 @@
   background: rgba(255, 255, 255, 0.035);
 }
 
-@media (max-width: 900px) {
+.watch-properties {
+  width: 272px;
+  min-width: 272px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 10px;
+  border-left: 1px solid #3a3a3a;
+  background: #202020;
+  color: #c9c9c9;
+}
+
+.watch-prop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e2e2;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #383838;
+}
+
+.watch-prop-section {
+  padding: 10px 0;
+  border-bottom: 1px solid #333;
+}
+
+.watch-prop-head {
+  margin-bottom: 6px;
+  color: #a9a9a9;
+  font-size: 12px;
+}
+
+.watch-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.watch-prop-field {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.watch-prop-field .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.watch-prop-note {
+  margin-top: 8px;
+  color: #858585;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.watch-properties #wViewReset {
+  width: 100%;
+  margin-top: 10px;
+}
+
+@media (max-width: 1100px) {
   .watch-help { display: none; }
+}
+
+@media (max-width: 900px) {
   .watch-add #wName { width: 150px; }
+  .watch-properties {
+    width: 235px;
+    min-width: 235px;
+  }
 }
