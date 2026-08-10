@@ -103,16 +103,13 @@ export class Workbench {
     this.sideHost = this.host.querySelector('#wbSide') as HTMLElement;
     this.editorHost = this.host.querySelector('#wbEditor') as HTMLElement;
 
-    // 1) 도크 먼저 (커맨드가 ctx.dock 을 참조)
     const dock = new DockService(this.ctx);
     (this.ctx as any).dock = dock;
     dock.mount(this.editorHost);
 
-    // 2) 사이드바
     this.sidebar = new SideBar(this.ctx);
     this.sideHost.appendChild(this.sidebar.render());
 
-    // 3) 커맨드 + 키보드
     registerCommands(this.ctx);
     this.ctx.commands.register({
       id: 'palette.show', title: '명령 팔레트', category: '보기',
@@ -129,18 +126,16 @@ export class Workbench {
     this.bindSash();
     this.bindStatus();
 
-    // 4) 레이아웃 복원 또는 기본 배치. 복원 OFF면 저장 데이터는 지우지 않고 이번 시작에서만 사용하지 않는다.
     const restored = settings.general.restoreLayout ? dock.restoreLayout() : false;
     if (!restored) {
       dock.open('welcome', {}, {});
-      dock.open('chart', {}, { direction: 'right' });
+      dock.open('chart', { period: settings.chart.defaultPeriod }, { direction: 'right' });
       dock.open('output', {}, { direction: 'below' });
       dock.focus('welcome');
     }
     window.addEventListener('beforeunload', () => dock.saveLayout());
   }
 
-  /* ---------- 메뉴 ---------- */
   private bindMenus(): void {
     const bar = this.host.querySelector('#wbMenu') as HTMLElement;
     bar.querySelectorAll<HTMLElement>('[data-m]').forEach(btn => {
@@ -167,17 +162,20 @@ export class Workbench {
     });
     document.addEventListener('click', () => this.closeMenus());
   }
+
   private closeMenus(): void {
     document.querySelectorAll('.wb-pop').forEach(p => p.remove());
   }
 
-  /* ---------- 액티비티 바 ---------- */
   private bindActivity(): void {
     this.host.querySelectorAll<HTMLElement>('[data-a]').forEach(btn => {
       btn.addEventListener('click', () => {
         const item = ACTIVITY.find(a => a.id === btn.dataset.a)!;
         if (!item.formId) { this.toggleSide(); return; }
-        (this.ctx as any).dock?.open(item.formId, item.params ?? {}, {});
+        const params = item.formId === 'chart'
+          ? { period: loadWorkbenchSettings().chart.defaultPeriod }
+          : item.params ?? {};
+        (this.ctx as any).dock?.open(item.formId, params, {});
       });
     });
   }
@@ -188,7 +186,6 @@ export class Workbench {
     (this.host.querySelector('#wbSash') as HTMLElement).style.display = this.sideVisible ? '' : 'none';
   }
 
-  /* ---------- 사이드바 리사이즈 ---------- */
   private bindSash(): void {
     const sash = this.host.querySelector('#wbSash') as HTMLElement;
     let dragging = false;
@@ -211,7 +208,6 @@ export class Workbench {
     });
   }
 
-  /* ---------- 상태 바 ---------- */
   private bindStatus(): void {
     const $ = (s: string) => this.host.querySelector(s) as HTMLElement;
     const clock = () => { $('#stClock').textContent = new Date().toLocaleTimeString('ko-KR'); };
@@ -239,7 +235,6 @@ export class Workbench {
     });
   }
 
-  /* ---------- 명령 팔레트 ---------- */
   private showPalette(): void {
     if (this.palette) { this.palette.remove(); this.palette = undefined; }
     const wrap = document.createElement('div');
