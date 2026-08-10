@@ -5,6 +5,13 @@ import path from 'node:path';
 import vwapJma from '../addons/chart-strategies/plugins/vwapJmaReclaim';
 import jmaPlugin from '../addons/chart-indicators/plugins/jma';
 import vwapPlugin from '../addons/chart-indicators/plugins/vwap';
+import {
+  getRegisteredStrategyPlugin,
+  listRegisteredStrategyPlugins,
+  onStrategyPluginsChanged,
+  registerStrategyPlugin,
+} from '../addons/chart-strategies/registry';
+import type { StrategyPlugin, StrategySignal } from '../addons/chart-strategies/types';
 import type { ChartBar } from '../src/chart/extensions';
 
 function bars(): ChartBar[] {
@@ -46,6 +53,39 @@ function vwapByTime(sample: ChartBar[]): Map<string, number> {
 function jmaByTime(sample: ChartBar[]): Map<string, number> {
   const data = jmaPlugin.create({ period: 3, phase: 50, power: 2 }).reset(sample);
   return new Map((data.value ?? []).map(row => [String(row.time), Number(row.value)]));
+}
+
+function makeExternalThresholdPlugin(): StrategyPlugin {
+  const evaluate = (sample: readonly ChartBar[], threshold: number): StrategySignal[] => {
+    const signals: StrategySignal[] = [];
+    for (let i = 1; i < sample.length; i++) {
+      const previous = sample[i - 1];
+      const current = sample[i];
+      if (previous.close <= threshold && current.close > threshold) {
+        signals.push({ time: current.time, type: 'buy', price: current.close, reason: 'test upward cross' });
+      } else if (previous.close >= threshold && current.close < threshold) {
+        signals.push({ time: current.time, type: 'sell', price: current.close, reason: 'test downward cross' });
+      }
+    }
+    return signals;
+  };
+
+  return {
+    id: 'test-external-threshold-cross',
+    version: 1,
+    label: 'Test External Threshold Cross',
+    description: 'Test-only plugin proving the public strategy registration contract.',
+    parameters: [
+      { key: 'threshold', label: 'Threshold', type: 'number', default: 100 },
+    ],
+    create(rawParams) {
+      const threshold = Number(rawParams.threshold ?? 100);
+      return {
+        reset(sample) { return { signals: evaluate(sample, threshold) }; },
+        update(sample) { return { signals: evaluate(sample, threshold) }; },
+      };
+    },
+  };
 }
 
 test('VWAP-JMA v3 emits ARM and BUY on a deterministic rebound without FAIL', () => {
@@ -152,6 +192,31 @@ test('VWAP-JMA strategy append and replace match a fresh full calculation', () =
   assert.deepEqual(replaced.signals, freshReplace.signals);
 });
 
+test('public strategy registration port accepts and removes an unrelated test-only plugin', () => {
+  const plugin = makeExternalThresholdPlugin();
+  let changes = 0;
+  const stop = onStrategyPluginsChanged(() => { changes++; });
+  const unregister = registerStrategyPlugin(plugin);
+
+  assert.equal(getRegisteredStrategyPlugin(plugin.id), plugin);
+  assert.ok(listRegisteredStrategyPlugins().some(x => x.id === plugin.id));
+  assert.throws(() => registerStrategyPlugin(plugin), /Duplicate strategy plugin id/);
+
+  const sample: ChartBar[] = [
+    { time: 1, open: 99, high: 99, low: 99, close: 99, volume: 1 },
+    { time: 2, open: 101, high: 101, low: 101, close: 101, volume: 1 },
+    { time: 3, open: 98, high: 98, low: 98, close: 98, volume: 1 },
+  ];
+  const result = plugin.create({ threshold: 100 }).reset(sample);
+  assert.deepEqual(result.signals.map(x => x.type), ['buy', 'sell']);
+
+  unregister();
+  unregister(); // disposer is idempotent
+  stop();
+  assert.equal(getRegisteredStrategyPlugin(plugin.id), undefined);
+  assert.equal(changes, 2, 'register and unregister must each publish one catalog change');
+});
+
 test('base ChartForm remains strategy-name and execution agnostic', () => {
   const root = path.resolve(process.cwd());
   const source = fs.readFileSync(path.join(root, 'src/forms/ChartForm.ts'), 'utf8');
@@ -167,8 +232,10 @@ test('strategy addon has one removable registration point and broker safety gate
   const execution = fs.readFileSync(path.join(root, 'addons/chart-strategies/execution.ts'), 'utf8');
   const account = fs.readFileSync(path.join(root, 'src/forms/AccountForm.ts'), 'utf8');
   const catalog = fs.readFileSync(path.join(root, 'addons/chart-strategies/catalog.ts'), 'utf8');
+  const api = fs.readFileSync(path.join(root, 'addons/chart-strategies/api.ts'), 'utf8');
 
-  assert.match(main, /addons\/chart-strategies\/register/);
+  assert.match(main, /import\.meta\.glob\('\.\.\/addons\/chart-strategies\/register\.ts'\)/);
+  assert.equal(main.includes("import('../addons/chart-strategies/register')"), false);
   assert.match(register, /registerChartExtension\('strategies'/);
   assert.match(execution, /payload\?\.confirmed === true/);
   assert.match(execution, /kt10000/);
@@ -176,4 +243,15 @@ test('strategy addon has one removable registration point and broker safety gate
   assert.match(execution, /ka10076/);
   assert.match(account, /StrategyPortfolioChanged/);
   assert.match(catalog, /migrateParams/);
+  assert.match(catalog, /registerStrategyPlugin/);
+  assert.match(api, /registerStrategyPlugin/);
+});
+
+test('strategy addon remains outside base TypeScript roots for physical removal', () => {
+  const root = path.resolve(process.cwd());
+  const tsconfig = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.json'), 'utf8')) as { include?: string[] };
+  const roots = tsconfig.include ?? [];
+  assert.equal(roots.includes('src'), true);
+  assert.equal(roots.includes('server'), true);
+  assert.equal(roots.some(x => x.startsWith('addons')), false);
 });
