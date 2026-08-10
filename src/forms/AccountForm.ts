@@ -1,5 +1,9 @@
 ﻿import { ChildForm } from './ChildForm';
-import { Topics } from '../core/events';
+import {
+  Topics,
+  type StrategyPortfolioSnapshot,
+  type StrategyPositionSnapshot,
+} from '../core/events';
 import { getSpec } from '../api/trSchema';
 
 type TabId = 'balance' | 'deposit' | 'pending' | 'filled' | 'profit';
@@ -45,6 +49,10 @@ export class AccountForm extends ChildForm {
   private timer?: number;
   private auto = false;
   private hideZero = true;
+  private strategy: StrategyPortfolioSnapshot = {
+    brokerArmed: false,
+    positions: [],
+  };
 
   protected onInit(): void {
     const wanted = this.params.apiId
@@ -54,6 +62,13 @@ export class AccountForm extends ChildForm {
     this.setTitle('계좌');
     this.render();
     void this.load();
+
+    this.track(this.ctx.bus.on<StrategyPortfolioSnapshot>(Topics.StrategyPortfolioChanged, snapshot => {
+      this.strategy = snapshot;
+      this.paintStrategy();
+    }));
+    this.ctx.bus.emit(Topics.StrategyPortfolioRequest, { source: this.formKey });
+
     this.track(() => { if (this.timer) window.clearInterval(this.timer); });
   }
 
@@ -87,6 +102,7 @@ export class AccountForm extends ChildForm {
           <label class="chk"><input type="checkbox" id="aAuto" ${this.auto ? 'checked' : ''}> 10초 자동</label>
           <button class="btn primary" id="aGo">${this.busy ? '조회중…' : '새로고침'}</button>
         </div>
+        <div id="aStrategy"></div>
         <div class="acc-body" id="aBody"><div class="loading">조회중…</div></div>
       </div>`);
 
@@ -104,6 +120,7 @@ export class AccountForm extends ChildForm {
       if (this.timer) { window.clearInterval(this.timer); this.timer = undefined; }
       if (this.auto) this.timer = window.setInterval(() => void this.load(), 10_000);
     });
+    this.paintStrategy();
     this.paint();
   }
 
@@ -121,6 +138,53 @@ export class AccountForm extends ChildForm {
       this.paint();
       const btn = this.$('#aGo'); if (btn) btn.textContent = '새로고침';
     }
+  }
+
+  private paintStrategy(): void {
+    const host = this.$('#aStrategy');
+    if (!host) return;
+    const positions = this.strategy.positions ?? [];
+    const armClass = this.strategy.brokerArmed ? 'dn' : '';
+    const armText = this.strategy.brokerArmed ? 'BROKER ARMED' : 'BROKER LOCKED';
+
+    let html = `<div class="tr-sub2">전략 매매 현황 · ${positions.length}건
+      <span class="tr-flex"></span><span class="${armClass}">${armText}</span></div>`;
+
+    if (positions.length) {
+      html += `<div class="grid-wrap"><table class="grid">
+        <thead><tr><th>실행</th><th>상태</th><th>전략</th><th>종목</th><th>수량</th><th>진입가</th><th>현재가</th><th>손익%</th><th>주문번호</th></tr></thead>
+        <tbody>${positions.map(p => this.strategyRow(p)).join('')}</tbody>
+      </table></div>`;
+    } else {
+      html += `<div class="tr-empty">현재 전략 매매 포지션이 없습니다. 신호만 모드는 차트 마커만 표시됩니다.</div>`;
+    }
+
+    if (this.strategy.lastError) {
+      html += `<div class="err">${this.esc(this.strategy.lastError)}</div>`;
+    }
+    host.innerHTML = html;
+  }
+
+  private strategyRow(p: StrategyPositionSnapshot): string {
+    const pnlClass = p.pnlPct > 0 ? 'up' : p.pnlPct < 0 ? 'dn' : '';
+    const status = ({
+      'paper-open': 'PAPER OPEN',
+      'broker-pending-buy': 'BUY PENDING',
+      'broker-open': 'BROKER OPEN',
+      'broker-pending-sell': 'SELL PENDING',
+      'broker-error': 'ERROR',
+    } as Record<string, string>)[p.status] ?? p.status;
+    return `<tr>
+      <td>${this.esc(p.executionMode.toUpperCase())}</td>
+      <td>${this.esc(status)}</td>
+      <td style="text-align:left" title="${this.esc(p.strategyInstanceId)}">${this.esc(p.strategyLabel)}</td>
+      <td>${this.esc(p.code)}${p.name ? `<br><small>${this.esc(p.name)}</small>` : ''}</td>
+      <td>${this.fmt(p.filledQty ?? p.qty)} / ${this.fmt(p.qty)}</td>
+      <td>${this.fmt(Math.round(p.entryPrice))}</td>
+      <td>${this.fmt(Math.round(p.currentPrice))}</td>
+      <td class="${pnlClass}">${Number(p.pnlPct).toFixed(2)}</td>
+      <td>${this.esc(p.orderNo ?? '')}</td>
+    </tr>`;
   }
 
   private paint(): void {
