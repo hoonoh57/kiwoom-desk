@@ -18,6 +18,7 @@ export class OrderForm extends ChildForm {
   private price = '';
   private trdeTp = '3';
   private stex = 'KRX';
+  private symbolLocked = false;
   private pending: any[] = [];
   private busy = false;
   private lastMsg = '';
@@ -30,12 +31,13 @@ export class OrderForm extends ChildForm {
     this.trdeTp = String(this.params.orderType ?? settings.order.defaultOrderType);
     this.stex = String(this.params.exchange ?? settings.order.defaultExchange);
     this.side = this.params.side === 'sell' || this.params.apiId === 'kt10001' ? 'sell' : 'buy';
+    this.symbolLocked = this.params.symbolLocked === true;
     this.setTitle('주문');
     this.render();
     void this.loadPending();
 
     const off = this.ctx.bus.onExcept(Topics.SymbolSelected, this.formKey, (p: any) => {
-      if (!p?.code) return;
+      if (this.symbolLocked || !p?.code) return;
       this.code = p.code; this.name = p.name ?? '';
       const el = this.$<HTMLInputElement>('#oCode'); if (el) el.value = this.code;
       const nm = this.$('#oName'); if (nm) nm.textContent = this.name;
@@ -52,6 +54,7 @@ export class OrderForm extends ChildForm {
         <div class="ord-head ${this.side}">
           <button class="side buy ${this.side === 'buy' ? 'on' : ''}" data-s="buy">매수</button>
           <button class="side sell ${this.side === 'sell' ? 'on' : ''}" data-s="sell">매도</button>
+          ${this.symbolLocked ? '<span class="tr-badge" title="차트에서 고정된 주문 종목">🔒 차트종목 고정</span>' : ''}
           <span class="tr-flex"></span>
           <span class="mode-badge ${this.isMock ? 'mock' : 'real'}">${this.esc(this.mode)}</span>
         </div>
@@ -59,7 +62,7 @@ export class OrderForm extends ChildForm {
         <div class="ord-grid">
           <label>종목코드</label>
           <span class="fld-sym">
-            <input id="oCode" value="${this.esc(this.code)}" maxlength="20" spellcheck="false">
+            <input id="oCode" value="${this.esc(this.code)}" maxlength="20" spellcheck="false" ${this.symbolLocked ? 'disabled' : ''}>
             <span class="c-nm" id="oName">${this.esc(this.name)}</span>
           </span>
 
@@ -104,7 +107,9 @@ export class OrderForm extends ChildForm {
   }
 
   private pull(): void {
-    this.code = (this.$<HTMLInputElement>('#oCode')?.value ?? '').trim();
+    if (!this.symbolLocked) {
+      this.code = (this.$<HTMLInputElement>('#oCode')?.value ?? '').trim();
+    }
     this.qty = (this.$<HTMLInputElement>('#oQty')?.value ?? '').trim();
     this.price = (this.$<HTMLInputElement>('#oPrice')?.value ?? '').trim();
     this.trdeTp = this.$<HTMLSelectElement>('#oType')?.value ?? '3';
