@@ -6,7 +6,13 @@ import {
   type IDockviewPanel,
 } from 'dockview-core';
 import type { AppContext } from '../core/context';
-import { createForm, formTitle, formInstancePolicy, type InstancePolicy } from '../forms/registry';
+import {
+  createForm,
+  formTitle,
+  formInstancePolicy,
+  getFormMeta,
+  type InstancePolicy,
+} from '../forms/registry';
 import type { ChildForm } from '../forms/ChildForm';
 
 /** dockview 패널 1개 = ChildForm 1개 */
@@ -89,15 +95,21 @@ export class DockService {
   open(formId: string, params: Record<string, any> = {}, opts: OpenOptions = {}): IDockviewPanel | undefined {
     if (!this.api) { this.ctx.log.error('DockService 가 아직 mount 되지 않았습니다.'); return; }
 
+    // 메타 기본값을 항상 먼저 채워 singleton 재사용 시 이전 호출의 옵션이 남지 않게 한다.
+    const resolvedParams = {
+      ...(getFormMeta(formId).defaultParams ?? {}),
+      ...params,
+    };
+
     // 패널 키는 폼의 인스턴스 정책에 따라 DockService 한 곳에서만 생성한다.
     const policy = formInstancePolicy(formId);
-    const key = this.keyFor(formId, params, policy, opts);
-    const title = opts.title ?? formTitle(formId, params);
+    const key = this.keyFor(formId, resolvedParams, policy, opts);
+    const title = opts.title ?? formTitle(formId, resolvedParams);
 
     const exist = this.api.getPanel(key);
     if (exist) {
-      // ★ 핵심: 기존 패널이면 파라미터를 갱신해 폼을 다시 그린다
-      exist.api.updateParameters({ formId, ...params });
+      // ★ 핵심: 기존 패널이면 완전한 기본값+호출 파라미터로 폼을 다시 초기화한다.
+      exist.api.updateParameters({ formId, ...resolvedParams });
       exist.api.setTitle(title);
       if (!opts.inactive) exist.api.setActive();
       return exist;
@@ -107,7 +119,7 @@ export class DockService {
       id: key,
       component: 'form',
       title,
-      params: { formId, ...params },
+      params: { formId, ...resolvedParams },
       inactive: opts.inactive,
       floating: opts.floating,
       position: this.resolvePosition(opts),
@@ -132,12 +144,18 @@ export class DockService {
 
     // multi는 항상 새 패널을 만들고,
     // per-api도 unique:false가 명시되면 새 패널을 만든다.
+    // 레이아웃 복원 뒤 seq가 0으로 시작해도 기존 chart#N을 절대 재사용하지 않는다.
     if (policy === 'multi' || opts.unique === false) {
-      return `${baseKey}#${++this.seq}`;
+      let key = '';
+      do {
+        key = `${baseKey}#${++this.seq}`;
+      } while (this.api.getPanel(key));
+      return key;
     }
 
     return baseKey;
   }
+
   private resolvePosition(opts: OpenOptions): any {
     if (opts.floating) return undefined;
     if (!opts.direction) return undefined;
