@@ -5,6 +5,7 @@ import './styles/layout.css';
 
 import { AppContext } from './core/context';
 import { Workbench } from './shell/Workbench';
+import { installTradeProtectionRuntime } from './trading/TradeProtectionRuntime';
 
 type OptionalStrategyAddonModule = {
   installChartStrategyAddon?: (ctx: AppContext) => { dispose?: () => void };
@@ -67,6 +68,8 @@ async function bootstrap(): Promise<void> {
   if (!host) throw new Error('#workbench 엘리먼트를 찾을 수 없습니다.');
 
   const ctx = new AppContext();
+  // 일반 주문/계좌 잔고 보호는 기본 Workbench 안전계층으로 항상 설치한다.
+  const tradeProtectionRuntime = installTradeProtectionRuntime(ctx);
   // 선택 add-on도 Workbench가 차트를 만들기 전에 동일 AppContext를 사용한다.
   const strategyRuntime = strategyAddon?.installChartStrategyAddon?.(ctx);
   (window as any).__ctx = ctx;
@@ -84,7 +87,10 @@ async function bootstrap(): Promise<void> {
     })
     .catch(e => ctx.log.error(`프록시 서버 연결 실패: ${e?.message ?? e}`));
 
-  window.addEventListener('beforeunload', () => strategyRuntime?.dispose?.());
+  window.addEventListener('beforeunload', () => {
+    strategyRuntime?.dispose?.();
+    tradeProtectionRuntime.dispose();
+  });
 }
 
 void bootstrap();
