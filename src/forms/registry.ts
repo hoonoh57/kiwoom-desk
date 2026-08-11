@@ -51,7 +51,7 @@ export const FORM_META: Record<string, FormMeta> = {
   trRunner:  { title: 'TR 실행기',     icon: 'run-all',      category: '조회', instance: 'per-api', hidden: true },
   chart:     { title: '차트',          icon: 'graph-line',   category: '조회', instance: 'multi' },
   account:   { title: '계좌',          icon: 'account',      category: '거래', instance: 'singleton', defaultParams: { tab: 'balance' } },
-  order:     { title: '주문',          icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy' } },
+  order:     { title: '주문',          icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy', symbolLocked: false } },
   condition: { title: '조건검색',      icon: 'filter',       category: '거래', instance: 'singleton' },
   watchlist: { title: '관심종목',      icon: 'star',         category: '조회', instance: 'singleton' },
   autotrade: { title: '자동매매 관제', icon: 'rocket',       category: '거래', instance: 'singleton' },
