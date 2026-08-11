@@ -7,7 +7,7 @@ import { OutputForm } from './OutputForm';
 import { LogForm } from './LogForm';
 import { StockInfoForm } from './StockInfoForm';
 import { TrRunnerForm } from './TrRunnerForm';
-import { ChartForm } from './ChartForm';
+import { ChartWorkspaceForm } from './ChartWorkspaceForm';
 import { AccountForm } from './AccountForm';
 import { OrderForm } from './OrderForm';
 import { PlaceholderForm } from './PlaceholderForm';
@@ -49,7 +49,7 @@ export const FORM_META: Record<string, FormMeta> = {
   log:       { title: '로그',          icon: 'list-flat',    category: '보기', instance: 'singleton' },
   stockInfo: { title: '종목정보',      icon: 'symbol-class', category: '조회', instance: 'per-api', defaultParams: { apiId: 'ka10001' } },
   trRunner:  { title: 'TR 실행기',     icon: 'run-all',      category: '조회', instance: 'per-api', hidden: true },
-  chart:     { title: '차트',          icon: 'graph-line',   category: '조회', instance: 'per-api' },
+  chart:     { title: '차트',          icon: 'graph-line',   category: '조회', instance: 'multi' },
   account:   { title: '계좌',          icon: 'account',      category: '거래', instance: 'singleton', defaultParams: { tab: 'balance' } },
   order:     { title: '주문',          icon: 'credit-card',  category: '거래', instance: 'singleton', defaultParams: { side: 'buy' } },
   condition: { title: '조건검색',      icon: 'filter',       category: '거래', instance: 'singleton' },
@@ -74,7 +74,7 @@ const RAW: Record<string, FormFactory> = {
   log:       (c, p) => new LogForm(c, p),
   stockInfo: (c, p) => new StockInfoForm(c, p),
   trRunner:  (c, p) => new TrRunnerForm(c, p),
-  chart:     (c, p) => new ChartForm(c, p),
+  chart:     (c, p) => new ChartWorkspaceForm(c, p),
   account:   (c, p) => new AccountForm(c, p),
   order:     (c, p) => new OrderForm(c, p),
   condition: (c, p) => new ConditionForm(c, p),
