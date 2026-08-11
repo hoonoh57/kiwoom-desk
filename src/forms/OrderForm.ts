@@ -25,10 +25,11 @@ export class OrderForm extends ChildForm {
   protected onInit(): void {
     const settings = loadWorkbenchSettings();
     this.code = this.params.code ?? (this.ctx as any).state?.symbol?.code ?? settings.general.defaultSymbol;
+    this.name = String(this.params.name ?? '');
     this.qty = String(this.params.qty ?? settings.order.defaultQuantity);
     this.trdeTp = String(this.params.orderType ?? settings.order.defaultOrderType);
     this.stex = String(this.params.exchange ?? settings.order.defaultExchange);
-    if (this.params.side === 'sell' || this.params.apiId === 'kt10001') this.side = 'sell';
+    this.side = this.params.side === 'sell' || this.params.apiId === 'kt10001' ? 'sell' : 'buy';
     this.setTitle('주문');
     this.render();
     void this.loadPending();
