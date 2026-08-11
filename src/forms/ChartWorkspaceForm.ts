@@ -378,6 +378,7 @@ export class ChartWorkspaceForm extends ChildForm {
       code: symbol.code,
       name: symbol.name,
       qty,
+      symbolLocked: true,
     });
   }
 
