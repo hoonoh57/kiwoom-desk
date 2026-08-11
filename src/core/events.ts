@@ -63,6 +63,10 @@ export const Topics = {
   Log: 'log.append',
   WatchlistChanged: 'watchlist.changed',
 
+  // 일반 주문/계좌 보유 종목을 차트 종목 변경으로부터 보호하는 중앙 계약.
+  TradeProtectionChanged: 'trade.protection-changed',
+  TradeProtectionRequest: 'trade.protection-request',
+
   // 선택적 strategy add-on과 중앙 계좌현황 사이의 중립 계약.
   StrategySignal: 'strategy.signal',
   StrategyTradeIntent: 'strategy.trade-intent',
@@ -84,6 +88,18 @@ export interface WatchlistChangedPayload extends Broadcast {
   revision: number;
   groups: number;
   items: number;
+}
+
+export type TradeProtectionReason = 'pending-order' | 'holding';
+export interface TradeProtectionItem {
+  code: string;
+  name?: string;
+  reason: TradeProtectionReason;
+  label: string;
+}
+export interface TradeProtectionSnapshot extends Broadcast {
+  items: TradeProtectionItem[];
+  refreshedAt: number;
 }
 
 export type StrategyExecutionMode = 'signal' | 'paper' | 'broker';
