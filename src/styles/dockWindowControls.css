@@ -1,0 +1,60 @@
+.kw-window-actions{
+  display:flex;
+  align-items:stretch;
+  height:100%;
+  margin-left:4px;
+}
+
+.kw-window-actions[hidden]{display:none!important}
+
+.kw-window-btn{
+  width:42px;
+  min-width:42px;
+  height:100%;
+  min-height:28px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--fg-dim,#a9b0ba);
+  font-family:'Segoe UI Symbol','Segoe UI',sans-serif;
+  font-size:15px;
+  line-height:1;
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  user-select:none;
+}
+
+.kw-window-btn:hover{
+  background:#ffffff16;
+  color:#fff;
+}
+
+.kw-window-btn:active{
+  background:#ffffff24;
+}
+
+.kw-window-btn.close:hover{
+  background:#c42b1c;
+  color:#fff;
+}
+
+.kw-window-btn[disabled]{
+  opacity:.35;
+  cursor:default;
+}
+
+.kw-window-btn[disabled]:hover{
+  background:transparent;
+  color:var(--fg-dim,#a9b0ba);
+}
+
+/* 최소화된 floating child는 탭/제어부만 남기고 본문을 숨긴다. */
+.dv-resize-container.kw-window-minimized .dv-content-container,
+.dv-resize-container.kw-window-minimized .content-container,
+.dv-resize-container.kw-window-minimized .chart-workspace-bar,
+.dv-resize-container.kw-window-minimized .chart-workspace-body{
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
