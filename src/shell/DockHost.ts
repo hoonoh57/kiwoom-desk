@@ -65,6 +65,7 @@ const LAYOUT_KEY = 'kiwoom-desk.layout.v3';
 export class DockService {
   private api!: DockviewApi;
   private seq = 0;
+  private readonly popoutPanels = new Set<string>();
 
   constructor(private ctx: AppContext) {}
 
@@ -146,15 +147,74 @@ export class DockService {
   }
 
   close(key: string): void {
+    this.popoutPanels.delete(key);
     this.api?.getPanel(key)?.api.close();
   }
 
   closeAll(): void {
+    this.popoutPanels.clear();
     this.api?.panels.slice().forEach(p => p.api.close());
   }
 
   focus(key: string): void {
     this.api?.getPanel(key)?.api.setActive();
+  }
+
+  /**
+   * 자식 Dock 패널 ↔ 독립 browser popout 토글.
+   * dockview-core 버전별 API 차이를 런타임 feature detection으로 흡수한다.
+   */
+  async togglePopout(key: string): Promise<boolean> {
+    const panel = this.api?.getPanel(key) as any;
+    if (!panel) return false;
+
+    const panelWindow = panel.api?.getWindow?.();
+    const detached = this.popoutPanels.has(key)
+      || (!!panelWindow && panelWindow !== window);
+
+    if (detached) {
+      const moveTo = panel.group?.api?.moveTo;
+      if (typeof moveTo !== 'function') return false;
+      moveTo.call(panel.group.api, { position: 'right' });
+      this.popoutPanels.delete(key);
+      panel.api?.setActive?.();
+      return true;
+    }
+
+    const addPopoutGroup = (this.api as any)?.addPopoutGroup;
+    if (typeof addPopoutGroup !== 'function') return false;
+
+    const options = {
+      popoutUrl: '/popout.html',
+      onWillClose: () => this.popoutPanels.delete(key),
+    };
+
+    try {
+      const result = await Promise.resolve(addPopoutGroup.call(this.api, panel, options));
+      if (result === false) return false;
+      this.popoutPanels.add(key);
+      return true;
+    } catch {
+      // 1.x 계열 일부 타입/구현은 panel 대신 group 전달을 요구한다.
+      const group = panel.group;
+      if (!group) return false;
+      try {
+        const result = await Promise.resolve(addPopoutGroup.call(this.api, group, options));
+        if (result === false) return false;
+        this.popoutPanels.add(key);
+        return true;
+      } catch (e: any) {
+        this.ctx.log.warn(`독립창 전환 실패(${key}): ${e?.message ?? e}`);
+        return false;
+      }
+    }
+  }
+
+  isPopout(key: string): boolean {
+    const panel = this.api?.getPanel(key) as any;
+    const panelWindow = panel?.api?.getWindow?.();
+    return this.popoutPanels.has(key)
+      || (!!panelWindow && panelWindow !== window);
   }
 
   get panelKeys(): string[] {
