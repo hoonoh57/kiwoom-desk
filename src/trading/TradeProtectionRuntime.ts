@@ -30,6 +30,7 @@ export class TradeProtectionRuntime {
     this.offs.push(
       ctx.bus.on<OrderAcceptedPayload>(Topics.OrderFilled, payload => this.onOrderAccepted(payload)),
       ctx.bus.on(Topics.TradeProtectionRequest, () => void this.refresh()),
+      ctx.bus.on(Topics.ConnectionChanged, () => this.scheduleRefresh(300)),
       ctx.bus.on(Topics.WsChanged, (payload: any) => {
         if (payload?.connected) this.scheduleRefresh(300);
       }),
@@ -104,18 +105,23 @@ export class TradeProtectionRuntime {
       ]);
 
       if (pendingResult.status === 'fulfilled') {
-        const data = payloadOf(pendingResult.value);
-        const rows = Array.isArray(data?.oso) ? data.oso : [];
-        for (const row of rows) {
-          const code = plainChartCode(row?.stk_cd ?? row?.code);
-          const remain = Math.abs(Number(String(row?.oso_qty ?? '').replace(/,/g, '')) || 0);
-          if (!code || remain <= 0) continue;
-          next.set(code, {
-            code,
-            name: String(row?.stk_nm ?? '').trim() || undefined,
-            reason: 'pending-order',
-            label: '미체결 주문',
-          });
+        try {
+          const data = checkedPayload(pendingResult.value, '미체결');
+          const rows = Array.isArray(data?.oso) ? data.oso : [];
+          for (const row of rows) {
+            const code = plainChartCode(row?.stk_cd ?? row?.code);
+            const remain = Math.abs(Number(String(row?.oso_qty ?? '').replace(/,/g, '')) || 0);
+            if (!code || remain <= 0) continue;
+            next.set(code, {
+              code,
+              name: String(row?.stk_nm ?? '').trim() || undefined,
+              reason: 'pending-order',
+              label: '미체결 주문',
+            });
+          }
+        } catch (e: any) {
+          preserveReason(previous, next, 'pending-order');
+          this.ctx.log.warn(`미체결 종목 보호상태 조회 실패: ${e?.message ?? e}`);
         }
       } else {
         preserveReason(previous, next, 'pending-order');
@@ -123,21 +129,26 @@ export class TradeProtectionRuntime {
       }
 
       if (balanceResult.status === 'fulfilled') {
-        const data = payloadOf(balanceResult.value);
-        const rows = Array.isArray(data?.acnt_evlt_remn_indv_tot)
-          ? data.acnt_evlt_remn_indv_tot
-          : [];
-        for (const row of rows) {
-          const code = plainChartCode(row?.stk_cd ?? row?.code);
-          const qty = Math.abs(Number(String(row?.rmnd_qty ?? '').replace(/,/g, '')) || 0);
-          if (!code || qty <= 0) continue;
-          if (next.has(code)) continue;
-          next.set(code, {
-            code,
-            name: String(row?.stk_nm ?? '').trim() || undefined,
-            reason: 'holding',
-            label: '계좌 보유중',
-          });
+        try {
+          const data = checkedPayload(balanceResult.value, '보유잔고');
+          const rows = Array.isArray(data?.acnt_evlt_remn_indv_tot)
+            ? data.acnt_evlt_remn_indv_tot
+            : [];
+          for (const row of rows) {
+            const code = plainChartCode(row?.stk_cd ?? row?.code);
+            const qty = Math.abs(Number(String(row?.rmnd_qty ?? '').replace(/,/g, '')) || 0);
+            if (!code || qty <= 0) continue;
+            if (next.has(code)) continue;
+            next.set(code, {
+              code,
+              name: String(row?.stk_nm ?? '').trim() || undefined,
+              reason: 'holding',
+              label: '계좌 보유중',
+            });
+          }
+        } catch (e: any) {
+          preserveReason(previous, next, 'holding');
+          this.ctx.log.warn(`보유종목 보호상태 조회 실패: ${e?.message ?? e}`);
         }
       } else {
         preserveReason(previous, next, 'holding');
@@ -181,6 +192,17 @@ export function installTradeProtectionRuntime(ctx: AppContext): TradeProtectionR
 
 function payloadOf(response: any): any {
   return response?.data ?? response?.body ?? response ?? {};
+}
+
+function checkedPayload(response: any, label: string): any {
+  const data = payloadOf(response);
+  const rawCode = data?.return_code;
+  const code = Number(rawCode);
+  if (rawCode !== undefined && (!Number.isFinite(code) || code !== 0)) {
+    const message = String(data?.return_msg ?? '').trim();
+    throw new Error(`${label} rc=${rawCode}${message ? ` · ${message}` : ''}`);
+  }
+  return data;
 }
 
 function preserveReason(
