@@ -48,12 +48,13 @@ export class ChartWorkspaceForm extends ChildForm {
   private controlMode: ChartControlMode = 'manual';
   private positions: StrategyPositionSnapshot[] = [];
   private protections: TradeProtectionItem[] = [];
-  private orderQty = '1';
+  private orderQty = '';
   private actionable?: ActionableSignal;
 
   protected onInit(): void {
     const settings = loadWorkbenchSettings();
-    this.orderQty = String(this.params.qty ?? this.orderQty ?? settings.order.defaultQuantity);
+    const rememberedQty = this.orderQty || String(settings.order.defaultQuantity);
+    this.orderQty = String(this.params.qty ?? rememberedQty);
 
     if (typeof this.params.locked === 'boolean') {
       this.userLocked = this.params.locked;
@@ -91,6 +92,7 @@ export class ChartWorkspaceForm extends ChildForm {
           <button type="button" class="cw-order buy" id="cwBuy">매수</button>
           <button type="button" class="cw-order sell" id="cwSell">매도</button>
           <span class="cw-window-actions">
+            <button type="button" class="cw-window" id="cwPop" title="독립창으로 분리">◱</button>
             <button type="button" class="cw-window" id="cwMax" title="최대화/이전 크기">□</button>
             <button type="button" class="cw-window close" id="cwClose" title="차트 닫기">×</button>
           </span>
@@ -139,6 +141,7 @@ export class ChartWorkspaceForm extends ChildForm {
 
     this.$('#cwBuy')?.addEventListener('click', () => this.openOrder('buy'));
     this.$('#cwSell')?.addEventListener('click', () => this.openOrder('sell'));
+    this.$('#cwPop')?.addEventListener('click', () => void this.togglePopout());
     this.$('#cwMax')?.addEventListener('click', () => this.toggleMaximize());
     this.$('#cwClose')?.addEventListener('click', () => this.closeSelf());
 
@@ -342,6 +345,23 @@ export class ChartWorkspaceForm extends ChildForm {
     const sell = this.$('#cwSell');
     buy?.classList.toggle('recommended', this.actionable?.side === 'buy');
     sell?.classList.toggle('recommended', this.actionable?.side === 'sell');
+
+    this.paintWindowActions();
+  }
+
+  private paintWindowActions(): void {
+    const key = String(this.panelApi?.id ?? '');
+    const popout = !!key && this.ctx.dock?.isPopout?.(key) === true;
+    const popButton = this.$<HTMLButtonElement>('#cwPop');
+    if (popButton) {
+      popButton.textContent = popout ? '↙' : '◱';
+      popButton.title = popout ? '자식창으로 복귀' : '독립창으로 분리';
+    }
+    const maxButton = this.$<HTMLButtonElement>('#cwMax');
+    if (maxButton) {
+      maxButton.disabled = popout;
+      maxButton.title = popout ? '독립창에서는 운영체제 창 크기 조절 사용' : '최대화/이전 크기';
+    }
   }
 
   private openOrder(side: TradeSide): void {
@@ -359,6 +379,17 @@ export class ChartWorkspaceForm extends ChildForm {
       name: symbol.name,
       qty,
     });
+  }
+
+  private async togglePopout(): Promise<void> {
+    const key = String(this.panelApi?.id ?? '');
+    if (!key) return;
+    const changed = await this.ctx.dock?.togglePopout?.(key);
+    if (!changed) {
+      this.ctx.log.warn(`차트 독립창/자식창 전환 실패: ${key}`);
+      return;
+    }
+    requestAnimationFrame(() => this.paintWindowActions());
   }
 
   private toggleMaximize(): void {
