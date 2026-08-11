@@ -14,7 +14,7 @@ test('all standard Workbench forms are concrete, not placeholders', () => {
     ['log', 'LogForm'],
     ['stockInfo', 'StockInfoForm'],
     ['trRunner', 'TrRunnerForm'],
-    ['chart', 'ChartForm'],
+    ['chart', 'ChartWorkspaceForm'],
     ['account', 'AccountForm'],
     ['order', 'OrderForm'],
     ['condition', 'ConditionForm'],
