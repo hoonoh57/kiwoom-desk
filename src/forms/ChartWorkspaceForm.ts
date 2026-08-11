@@ -92,8 +92,9 @@ export class ChartWorkspaceForm extends ChildForm {
           <button type="button" class="cw-order buy" id="cwBuy">매수</button>
           <button type="button" class="cw-order sell" id="cwSell">매도</button>
           <span class="cw-window-actions">
-            <button type="button" class="cw-window" id="cwPop" title="독립창으로 분리">◱</button>
+            <button type="button" class="cw-window" id="cwMin" title="최소화">—</button>
             <button type="button" class="cw-window" id="cwMax" title="최대화/이전 크기">□</button>
+            <button type="button" class="cw-window" id="cwPop" title="독립창/자식창">↗</button>
             <button type="button" class="cw-window close" id="cwClose" title="차트 닫기">×</button>
           </span>
         </div>
@@ -141,9 +142,17 @@ export class ChartWorkspaceForm extends ChildForm {
 
     this.$('#cwBuy')?.addEventListener('click', () => this.openOrder('buy'));
     this.$('#cwSell')?.addEventListener('click', () => this.openOrder('sell'));
-    this.$('#cwPop')?.addEventListener('click', () => void this.togglePopout());
+    this.$('#cwMin')?.addEventListener('click', () => this.toggleMinimize());
     this.$('#cwMax')?.addEventListener('click', () => this.toggleMaximize());
+    this.$('#cwPop')?.addEventListener('click', () => void this.togglePopout());
     this.$('#cwClose')?.addEventListener('click', () => this.closeSelf());
+
+    if (this.panelApi?.onDidLocationChange) {
+      const d = this.panelApi.onDidLocationChange(() => {
+        requestAnimationFrame(() => this.paintWindowActions());
+      });
+      this.track(() => d.dispose());
+    }
 
     const body = this.$('#cwBody');
     body?.addEventListener('change', event => {
@@ -351,16 +360,34 @@ export class ChartWorkspaceForm extends ChildForm {
 
   private paintWindowActions(): void {
     const key = String(this.panelApi?.id ?? '');
-    const popout = !!key && this.ctx.dock?.isPopout?.(key) === true;
-    const popButton = this.$<HTMLButtonElement>('#cwPop');
-    if (popButton) {
-      popButton.textContent = popout ? '↙' : '◱';
-      popButton.title = popout ? '자식창으로 복귀' : '독립창으로 분리';
+    if (!key) return;
+
+    const state = this.ctx.dock?.windowState?.(key);
+    if (!state) return;
+
+    const minButton = this.$<HTMLButtonElement>('#cwMin');
+    if (minButton) {
+      minButton.disabled = state.location === 'grid';
+      minButton.textContent = state.minimized ? '▱' : '—';
+      minButton.title = state.location === 'grid'
+        ? '자식 floating 창에서 최소화할 수 있습니다.'
+        : state.minimized
+          ? '이전 크기'
+          : '최소화';
     }
+
     const maxButton = this.$<HTMLButtonElement>('#cwMax');
     if (maxButton) {
-      maxButton.disabled = popout;
-      maxButton.title = popout ? '독립창에서는 운영체제 창 크기 조절 사용' : '최대화/이전 크기';
+      maxButton.textContent = state.maximized ? '❐' : '□';
+      maxButton.title = state.maximized ? '이전 크기' : '최대화';
+    }
+
+    const popButton = this.$<HTMLButtonElement>('#cwPop');
+    if (popButton) {
+      popButton.textContent = state.location === 'popout' ? '↙' : '↗';
+      popButton.title = state.location === 'popout'
+        ? '자식창으로 복귀'
+        : '독립창으로 분리';
     }
   }
 
@@ -382,6 +409,28 @@ export class ChartWorkspaceForm extends ChildForm {
     });
   }
 
+  private toggleMinimize(): void {
+    const key = String(this.panelApi?.id ?? '');
+    if (!key) return;
+    const changed = this.ctx.dock?.toggleMinimize?.(key);
+    if (!changed) {
+      this.ctx.log.warn(`차트 최소화/이전크기 실패: ${key}`);
+      return;
+    }
+    requestAnimationFrame(() => this.paintWindowActions());
+  }
+
+  private toggleMaximize(): void {
+    const key = String(this.panelApi?.id ?? '');
+    if (!key) return;
+    const changed = this.ctx.dock?.toggleMaximize?.(key);
+    if (!changed) {
+      this.ctx.log.warn(`차트 최대화/이전크기 실패: ${key}`);
+      return;
+    }
+    requestAnimationFrame(() => this.paintWindowActions());
+  }
+
   private async togglePopout(): Promise<void> {
     const key = String(this.panelApi?.id ?? '');
     if (!key) return;
@@ -391,18 +440,6 @@ export class ChartWorkspaceForm extends ChildForm {
       return;
     }
     requestAnimationFrame(() => this.paintWindowActions());
-  }
-
-  private toggleMaximize(): void {
-    try {
-      if (this.panelApi?.isMaximized?.()) {
-        this.panelApi?.exitMaximized?.();
-      } else {
-        this.panelApi?.maximize?.();
-      }
-    } catch (e: any) {
-      this.ctx.log.warn(`차트 최대화/복원 실패: ${e?.message ?? e}`);
-    }
   }
 }
 
