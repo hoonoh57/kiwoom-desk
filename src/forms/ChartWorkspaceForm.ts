@@ -3,6 +3,8 @@ import {
   Topics,
   type StrategyPortfolioSnapshot,
   type StrategyPositionSnapshot,
+  type TradeProtectionItem,
+  type TradeProtectionSnapshot,
 } from '../core/events';
 import {
   canApplyLinkedSymbol,
@@ -36,7 +38,7 @@ interface SymbolMessage {
  *
  * 핵심 규칙
  * - 기본 userLocked=true: 조건검색/관심종목 등 외부 SymbolSelected를 차단한다.
- * - AUTO 또는 실제 전략 포지션이 있으면 강제잠금한다.
+ * - AUTO, 전략 포지션, 일반 미체결/계좌 보유 종목이면 강제잠금한다.
  * - ChartForm 자체의 종목 변경 알림은 route=inform 으로 바꿔 다른 차트에 전파하지 않는다.
  * - 외부 linked 선택은 잠금이 풀린 모든 차트에 동일하게 적용된다.
  */
@@ -45,6 +47,7 @@ export class ChartWorkspaceForm extends ChildForm {
   private userLocked = true;
   private controlMode: ChartControlMode = 'manual';
   private positions: StrategyPositionSnapshot[] = [];
+  private protections: TradeProtectionItem[] = [];
   private orderQty = '1';
   private actionable?: ActionableSignal;
 
@@ -64,6 +67,7 @@ export class ChartWorkspaceForm extends ChildForm {
     this.mountChart();
     this.bindWorkspaceEvents();
     this.ctx.bus.emit(Topics.StrategyPortfolioRequest, { source: this.formKey });
+    this.ctx.bus.emit(Topics.TradeProtectionRequest, { source: this.formKey });
     this.paintProtection();
   }
 
@@ -158,6 +162,16 @@ export class ChartWorkspaceForm extends ChildForm {
       },
     ));
 
+    this.track(this.ctx.bus.on<TradeProtectionSnapshot>(
+      Topics.TradeProtectionChanged,
+      snapshot => {
+        this.protections = Array.isArray(snapshot?.items)
+          ? snapshot.items.map(item => ({ ...item }))
+          : [];
+        this.paintProtection();
+      },
+    ));
+
     this.track(this.ctx.bus.on(Topics.StrategySignal, (payload: any) => {
       if (this.controlMode !== 'semi') return;
       if (payload?.phase !== 'finalized' || payload?.actionable !== true) return;
@@ -205,6 +219,7 @@ export class ChartWorkspaceForm extends ChildForm {
           if (!this.canApplyLinkedSelection()) return;
           this.actionable = undefined;
           handler(payload);
+          requestAnimationFrame(() => this.paintProtection());
         });
       },
       emit: (topic: string, payload: any) => {
@@ -236,13 +251,23 @@ export class ChartWorkspaceForm extends ChildForm {
     return { code, name };
   }
 
+  private accountProtectionReason(code: string): string {
+    const item = this.protections.find(
+      protection => plainChartCode(protection.code) === plainChartCode(code),
+    );
+    return item?.label ?? '';
+  }
+
   private forcedReason(): string {
     const symbol = this.currentSymbol();
+    const account = this.accountProtectionReason(symbol.code);
+    if (account) return account;
     return chartForcedLockReason(this.controlMode, symbol.code, this.positions);
   }
 
   private canApplyLinkedSelection(): boolean {
     const symbol = this.currentSymbol();
+    if (this.accountProtectionReason(symbol.code)) return false;
     return canApplyLinkedSymbol(
       this.userLocked,
       this.controlMode,
