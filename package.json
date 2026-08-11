@@ -14,7 +14,7 @@
     "test:watchlist": "tsx --test tests/watchlist.test.ts",
     "test:settings": "tsx --test tests/settings.test.ts",
     "test:autotrade": "tsx --test tests/autotrade.test.ts",
-    "test:chart-window": "tsx --test tests/chartWindowPolicy.test.ts",
+    "test:chart-window": "tsx --test tests/chartWindowPolicy.test.ts tests/dockWindowControls.test.ts",
     "test:audit": "tsx --test tests/workbenchAudit.test.ts",
     "preview": "vite preview"
   },
