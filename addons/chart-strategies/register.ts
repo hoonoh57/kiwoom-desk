@@ -3,6 +3,7 @@ import { Topics, type StrategyPortfolioSnapshot } from '../../src/core/events';
 import { registerChartExtension } from '../../src/chart/extensions';
 import { StrategyHost } from './StrategyHost';
 import { installStrategyExecutionRuntime, type StrategyExecutionRuntime } from './execution';
+import { installStrategyHostControlModePatch } from './controlMode';
 import './strategy.css';
 
 let installed = false;
@@ -15,6 +16,7 @@ let brokerStateBridge: (() => void) | undefined;
  */
 export function installChartStrategyAddon(ctx: AppContext): StrategyExecutionRuntime {
   if (!installed) {
+    installStrategyHostControlModePatch(StrategyHost);
     registerChartExtension('strategies', chartContext => new StrategyHost(chartContext, ctx));
     installed = true;
   }
