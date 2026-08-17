@@ -4,9 +4,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/main.ts'
       - 'src/chart/**'
       - 'src/forms/ChartForm.ts'
       - 'addons/chart-*/**'
+      - 'tests/projectRuntimeSeam.test.ts'
       - 'tests/chartRuntimeHost.test.ts'
       - 'tests/chartRuntimeStateData.test.ts'
       - 'tests/indicator*.test.ts'
@@ -18,9 +20,11 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'src/main.ts'
       - 'src/chart/**'
       - 'src/forms/ChartForm.ts'
       - 'addons/chart-*/**'
+      - 'tests/projectRuntimeSeam.test.ts'
       - 'tests/chartRuntimeHost.test.ts'
       - 'tests/chartRuntimeStateData.test.ts'
       - 'tests/indicator*.test.ts'
@@ -75,8 +79,8 @@ jobs:
           $runtimeHostSource = Get-Content 'src/chart/runtimeHost.ts' -Raw -Encoding UTF8
           if (-not $runtimeHostSource.Contains("CHART_VIEWPORT: 'chart.viewport'")) { throw 'chart.viewport service id missing from ChartRuntimeHost' }
 
-      - name: Verify canonical runtime host
-        run: npx tsx --test tests/chartRuntimeHost.test.ts tests/chartRuntimeStateData.test.ts
+      - name: Verify canonical runtime host and project lifecycle seam
+        run: npx tsx --test tests/projectRuntimeSeam.test.ts tests/chartRuntimeHost.test.ts tests/chartRuntimeStateData.test.ts
 
       - name: Verify indicator compatibility
         run: npm run test:indicators
