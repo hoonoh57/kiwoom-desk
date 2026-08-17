@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-// Verification probe only: exercises the recovered main source through observable PR CI.
+// Verification probe v2: rerun recovered main after the PowerShell gate fix.
 import {
   ChartRuntimeServiceIds,
   createChartRuntimeHost,
