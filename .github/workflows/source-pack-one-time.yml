@@ -1,5 +1,6 @@
 name: Export Pinned Source One-Time
 
+# One-time exact-tree export for paired Factory verification.
 on:
   push:
     branches: [main]
