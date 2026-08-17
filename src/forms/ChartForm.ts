@@ -82,6 +82,7 @@ export class ChartForm extends ChildForm {
   // CHART_RUNTIME_STATE_DATA_SERVICES_V1 — generic base capabilities only.
   private runtimeBootstrapOpen = true;
   private runtimeDataRestored = false;
+  private runtimeDataLoadedIdentity = '';
   private readonly runtimeStateSubscribers = new Set<(state: ChartRuntimeCoreState) => void>();
   private ro?: ResizeObserver;
 
@@ -229,10 +230,11 @@ export class ChartForm extends ChildForm {
   }
 
   private captureRuntimeDataSnapshot(): unknown {
-    if (!this.bars.length) return undefined;
+    const identity = this.runtimeDataIdentity();
+    if (!this.bars.length || this.runtimeDataLoadedIdentity !== identity) return undefined;
     return {
       schemaVersion: 1,
-      identity: this.runtimeDataIdentity(),
+      identity,
       name: this.name,
       bars: structuredClone(this.bars),
       sourceTickBars: structuredClone(this.sourceTickBars),
@@ -262,6 +264,7 @@ export class ChartForm extends ChildForm {
     this.nextKey = typeof raw.nextKey === 'string' ? raw.nextKey : '';
     this.liveTickCount = Number.isFinite(Number(raw.liveTickCount)) ? Number(raw.liveTickCount) : 0;
     this.liveTickSynced = raw.liveTickSynced === true;
+    this.runtimeDataLoadedIdentity = this.runtimeDataIdentity();
     this.runtimeDataRestored = true;
     return true;
   }
@@ -509,6 +512,7 @@ export class ChartForm extends ChildForm {
 
     if (!more) {
       this.runtimeDataRestored = false;
+      this.runtimeDataLoadedIdentity = '';
       this.clearRealtimeRegistration();
       this.liveTickCount = 0;
       this.liveTickSynced = false;
@@ -564,6 +568,7 @@ export class ChartForm extends ChildForm {
         this.bars = this.merge(parsed, more ? this.bars : []);
       }
 
+      if (!more) this.runtimeDataLoadedIdentity = this.runtimeDataIdentity();
       this.refreshSeries(!more);
 
       const nm = data?.stk_nm ?? '';
