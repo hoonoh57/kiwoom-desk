@@ -196,3 +196,35 @@ test('ChartForm uses one native runtime host seam and contains no optional featu
     assert.equal(source.includes(lifecycle), true, `ChartForm missing native Host lifecycle: ${lifecycle}`);
   }
 });
+
+test('chart.viewport is a permanent generic Host contract with no optional-feature ownership', async () => {
+  assert.equal(ChartRuntimeServiceIds.CHART_VIEWPORT, 'chart.viewport');
+
+  const viewport = await fs.readFile(new URL('../src/chart/runtimeViewport.ts', import.meta.url), 'utf8');
+  assert.match(viewport, /export interface ChartRuntimeViewportState/);
+  assert.match(viewport, /logicalRange\?: ChartRuntimeLogicalRange/);
+  assert.match(viewport, /visibleTimeRange\?: ChartRuntimeVisibleTimeRange/);
+  assert.match(viewport, /viewportBarCount\?: number/);
+  assert.match(viewport, /followLatest\?: boolean/);
+  assert.match(viewport, /export interface ChartRuntimeViewportService/);
+  assert.match(viewport, /read\(\): ChartRuntimeViewportState \| undefined/);
+  assert.match(viewport, /apply\(state: ChartRuntimeViewportState\): void/);
+  assert.match(viewport, /beginLayoutMutation\(reason\?: string\): \(\) => void/);
+  assert.match(viewport, /flush\(\): void/);
+
+  for (const forbidden of [
+    'WorkspaceSession',
+    'VirtualDesktop',
+    'ThemeContext',
+    'ResearchFeature',
+    'PropertyGrid',
+    'SOX-N15-V1',
+    'SuperTrend',
+  ]) {
+    assert.equal(
+      viewport.includes(forbidden),
+      false,
+      `Generic viewport contract contains optional feature ownership: ${forbidden}`,
+    );
+  }
+});
