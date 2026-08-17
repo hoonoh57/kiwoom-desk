@@ -11,6 +11,17 @@ type OptionalStrategyAddonModule = {
   installChartStrategyAddon?: (ctx: AppContext) => { dispose?: () => void };
 };
 
+type OptionalProjectRuntime = {
+  afterWorkbench?: () => void;
+  dispose?: () => void;
+};
+
+type OptionalProjectModule = {
+  installProject?: (
+    ctx: AppContext,
+  ) => OptionalProjectRuntime | Promise<OptionalProjectRuntime | undefined> | undefined;
+};
+
 async function loadOptionalIndicatorAddon(): Promise<void> {
   // glob은 파일이 물리적으로 없으면 빈 객체가 된다. 따라서 add-on 폴더를 제거해도
   // base Workbench production build가 모듈 resolve 때문에 깨지지 않는다.
@@ -50,6 +61,27 @@ async function loadOptionalDiagnosticsAddon(): Promise<void> {
   });
 }
 
+/**
+ * PROJECT_RUNTIME_NATIVE_V1
+ *
+ * One generic project-composition seam owned by the base application. A generated
+ * project may add src/project/register.ts; the base repository has no such module,
+ * so the glob is empty and the normal Workbench startup remains unchanged.
+ *
+ * The Factory must create/remove project modules without rewriting src/main.ts.
+ */
+async function installOptionalProjectRuntime(ctx: AppContext): Promise<OptionalProjectRuntime | undefined> {
+  const loaders = import.meta.glob('./project/register.ts') as Record<
+    string,
+    () => Promise<OptionalProjectModule>
+  >;
+  const load = Object.values(loaders)[0];
+  if (!load) return undefined;
+
+  const module = await load();
+  return await module.installProject?.(ctx);
+}
+
 async function bootstrap(): Promise<void> {
   // 선택적 차트 추가기능. 폴더가 없거나 로드에 실패해도 기본 ChartForm은 계속 동작한다.
   await loadOptionalIndicatorAddon();
@@ -68,6 +100,9 @@ async function bootstrap(): Promise<void> {
   if (!host) throw new Error('#workbench 엘리먼트를 찾을 수 없습니다.');
 
   const ctx = new AppContext();
+  // Project composition is one generic lifecycle boundary. It is installed before
+  // Workbench so Workspace/chart plugins can register before any ChartForm exists.
+  const projectRuntime = await installOptionalProjectRuntime(ctx);
   // 일반 주문/계좌 잔고 보호는 기본 Workbench 안전계층으로 항상 설치한다.
   const tradeProtectionRuntime = installTradeProtectionRuntime(ctx);
   // 선택 add-on도 Workbench가 차트를 만들기 전에 동일 AppContext를 사용한다.
@@ -76,6 +111,7 @@ async function bootstrap(): Promise<void> {
 
   const wb = new Workbench(ctx);
   wb.render(host);
+  projectRuntime?.afterWorkbench?.();
 
   ctx.api.status()
     .then(s => {
@@ -89,6 +125,7 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener('beforeunload', () => {
     strategyRuntime?.dispose?.();
+    projectRuntime?.dispose?.();
     tradeProtectionRuntime.dispose();
   });
 }
