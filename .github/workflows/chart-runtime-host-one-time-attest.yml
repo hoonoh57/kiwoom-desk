@@ -44,11 +44,12 @@ jobs:
           foreach ($marker in @(
             'private runtimeDataLoadedIdentity',
             'if (!this.bars.length || this.runtimeDataLoadedIdentity !== identity) return undefined;',
-            'raw.identity !== this.runtimeDataIdentity()',
-            '[ChartRuntimeServiceIds.CHART_VIEWPORT]'
+            'raw.identity !== this.runtimeDataIdentity()'
           )) {
-            if (-not $chart.Contains($marker)) { throw "strict identity / host marker missing: $marker" }
+            if (-not $chart.Contains($marker)) { throw "strict identity marker missing: $marker" }
           }
+          $host = Get-Content 'src/chart/runtimeHost.ts' -Raw -Encoding UTF8
+          if (-not $host.Contains("CHART_VIEWPORT: 'chart.viewport'")) { throw 'chart.viewport service id missing from ChartRuntimeHost' }
 
       - name: Verify canonical runtime host
         run: npx tsx --test tests/chartRuntimeHost.test.ts tests/chartRuntimeStateData.test.ts
