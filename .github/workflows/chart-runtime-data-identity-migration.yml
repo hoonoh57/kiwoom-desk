@@ -33,6 +33,23 @@ jobs:
       - name: Apply strict loaded-data identity guard
         run: node scripts/fix_chartform_data_snapshot_identity.mjs
 
+      - name: Upgrade identity contract assertion
+        shell: pwsh
+        run: |
+          $p = '.\tests\chartRuntimeStateData.test.ts'
+          $s = (Get-Content $p -Raw -Encoding UTF8) -replace "`r`n", "`n"
+          $old = "  assert.match(source, /identity: this\\.runtimeDataIdentity\\(\\)/);"
+          $new = @"
+          assert.match(source, /const identity = this\.runtimeDataIdentity\(\)/);
+          assert.match(source, /runtimeDataLoadedIdentity !== identity/);
+          assert.match(source, /identity,/);
+          assert.match(source, /runtimeDataLoadedIdentity = this\.runtimeDataIdentity\(\)/);
+          assert.match(source, /runtimeDataLoadedIdentity = ''/);
+          "@.TrimEnd()
+          if (-not $s.Contains($old)) { throw 'Old chart data identity assertion marker not found.' }
+          $s = $s.Replace($old, $new)
+          [System.IO.File]::WriteAllText((Resolve-Path $p), $s, [System.Text.UTF8Encoding]::new($false))
+
       - name: Verify canonical runtime host
         run: npx tsx --test tests/chartRuntimeHost.test.ts tests/chartRuntimeStateData.test.ts
 
