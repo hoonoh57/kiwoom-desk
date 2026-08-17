@@ -1,0 +1,69 @@
+name: Export Pinned Source One-Time
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/source-pack-one-time.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: export-pinned-source-one-time
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Export exact verified source tree
+        id: pack
+        shell: pwsh
+        run: |
+          $pin = 'bdf3f22085a5106df67384c4479cd0211f203b7a'
+          git cat-file -e "$pin^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw "Pinned source commit not found: $pin" }
+          New-Item -ItemType Directory -Force '.verification' | Out-Null
+          $artifact = ".verification\kiwoom-desk-$pin.zip"
+          git archive --format=zip --output="$artifact" $pin
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $artifact)) { throw 'git archive failed' }
+          $sha256 = (Get-FileHash $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "pin=$pin" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "artifact=kiwoom-desk-$pin" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload exact source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.artifact }}
+          path: .verification/kiwoom-desk-${{ steps.pack.outputs.pin }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record source-pack attestation
+        shell: pwsh
+        run: |
+          $record = [ordered]@{
+            schemaVersion = 1
+            gate = 'KIWOOM_DESK_PINNED_SOURCE_PACK_V1'
+            result = 'SUCCESS'
+            sourceRef = '${{ steps.pack.outputs.pin }}'
+            artifactName = '${{ steps.pack.outputs.artifact }}'
+            artifactSha256 = '${{ steps.pack.outputs.sha256 }}'
+            runId = '${{ github.run_id }}'
+          }
+          New-Item -ItemType Directory -Force '.verification' | Out-Null
+          $record | ConvertTo-Json -Depth 5 | Set-Content '.verification\source-pack-attested.json' -Encoding UTF8
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f '.verification/source-pack-attested.json'
+          git commit -m 'verify: attest pinned upstream source pack'
+          git pull --rebase origin main
+          git push origin HEAD:main
