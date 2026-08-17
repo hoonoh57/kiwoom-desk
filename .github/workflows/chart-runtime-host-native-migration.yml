@@ -33,6 +33,17 @@ jobs:
       - name: Apply one-time ChartForm migration
         run: node scripts/migrate_chartform_runtime_host.mjs
 
+      - name: Move architecture assertion to the one native Host
+        shell: pwsh
+        run: |
+          $p = '.\tests\indicatorAddon.test.ts'
+          $s = (Get-Content $p -Raw -Encoding UTF8) -replace "`r`n", "`n"
+          $old = "  assert.equal(source.includes('DMI'), false);`n  assert.equal(source.includes('createChartExtensions'), true);"
+          $new = "  assert.equal(source.includes('DMI'), false);`n  assert.equal(source.includes('CHART_RUNTIME_HOST_NATIVE_V1'), true);`n  assert.equal(source.includes('createChartRuntimeHost'), true);`n  assert.equal(source.includes('createChartExtensions'), false);"
+          if (-not $s.Contains($old)) { throw 'Indicator architecture assertion marker not found.' }
+          $s = $s.Replace($old, $new)
+          [System.IO.File]::WriteAllText((Resolve-Path $p), $s, [System.Text.UTF8Encoding]::new($false))
+
       - name: Verify canonical runtime host
         run: npx tsx --test tests/chartRuntimeHost.test.ts
 
