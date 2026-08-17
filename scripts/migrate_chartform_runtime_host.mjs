@@ -13,6 +13,7 @@ function replaceRequired(source, marker, replacement, label) {
 }
 
 let source = await fs.readFile(file, 'utf8');
+source = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 if (source.includes('CHART_RUNTIME_HOST_NATIVE_V1')) {
   console.log('ChartForm already uses native ChartRuntimeHost lifecycle.');
   process.exit(0);
