@@ -1,0 +1,68 @@
+name: One-time Generic Chart State Data Migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/migrate_chartform_state_data_services.mjs'
+      - '.github/workflows/chart-runtime-state-data-migration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: windows-2025
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Apply one-time generic state/data migration
+        run: node scripts/migrate_chartform_state_data_services.mjs
+
+      - name: Verify canonical runtime host
+        run: npx tsx --test tests/chartRuntimeHost.test.ts
+
+      - name: Verify existing chart add-ons
+        shell: pwsh
+        run: |
+          npm run test:indicators
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:strategies
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:diagnostics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Production build
+        run: npm run build
+
+      - name: Remove migration scaffolding
+        shell: pwsh
+        run: |
+          Remove-Item .\scripts\migrate_chartform_state_data_services.mjs -Force
+          Remove-Item .\.github\workflows\chart-runtime-state-data-migration.yml -Force
+
+      - name: Commit verified generic services
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if (git diff --cached --quiet) {
+            throw 'Generic chart state/data migration produced no committed source change.'
+          }
+          git commit -m "refactor: expose generic chart state and data services"
+          git push origin HEAD:main
