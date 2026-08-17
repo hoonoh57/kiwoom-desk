@@ -200,6 +200,19 @@ export class ChartRuntimeHost {
     this.dispatch('onBarChanged', bar, change, bars);
   }
 
+  /** Temporary source-compatibility methods for the old ChartExtensionGroup call sites. */
+  onBarsReset(bars: readonly ChartRuntimeBar[]): void {
+    this.barsReset(bars);
+  }
+
+  onBarChanged(
+    bar: ChartRuntimeBar,
+    change: ChartRuntimeBarChange,
+    bars: readonly ChartRuntimeBar[],
+  ): void {
+    this.barChanged(bar, change, bars);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -209,6 +222,7 @@ export class ChartRuntimeHost {
       this.shell = undefined;
     }
     for (const item of [...this.active].reverse()) {
+      if (item.failed) continue;
       try {
         item.plugin.dispose?.();
       } catch {
