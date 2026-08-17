@@ -39,6 +39,7 @@ test('opaque chart data snapshot requires the last committed data identity', asy
   assert.match(source, /raw\.identity !== this\.runtimeDataIdentity\(\)/);
   assert.match(source, /runtimeDataLoadedIdentity = this\.runtimeDataIdentity\(\)/);
   assert.match(source, /runtimeDataLoadedIdentity = ''/);
+  assert.match(source, /if \(!more\) this\.runtimeDataLoadedIdentity = this\.runtimeDataIdentity\(\)/);
   assert.match(source, /this\.runtimeDataRestored = true/);
   assert.match(source, /presentRestoredRuntimeData\(\)/);
   assert.match(source, /세션 복원 · REST 재조회 없음/);
