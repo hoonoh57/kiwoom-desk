@@ -1,0 +1,76 @@
+name: Export Pinned Git Bundle One-Time
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/source-git-bundle-one-time.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: export-pinned-git-bundle-one-time
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Export exact pinned commit as cloneable Git bundle
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin='bdf3f22085a5106df67384c4479cd0211f203b7a'
+          git cat-file -e "$pin^{commit}"
+          mkdir -p .verification
+          ref='refs/heads/factory-pinned-source'
+          git update-ref "$ref" "$pin"
+          artifact="kiwoom-desk-$pin.bundle"
+          git bundle create ".verification/$artifact" "$ref"
+          git bundle verify ".verification/$artifact"
+          bundled_commit="$(git rev-parse "$ref")"
+          test "$bundled_commit" = "$pin"
+          sha256="$(sha256sum ".verification/$artifact" | awk '{print $1}')"
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=kiwoom-desk-git-bundle-$pin" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload pinned Git bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.artifact_name }}
+          path: .verification/${{ steps.pack.outputs.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record Git-bundle attestation
+        shell: pwsh
+        run: |
+          $record = [ordered]@{
+            schemaVersion = 1
+            gate = 'KIWOOM_DESK_PINNED_GIT_BUNDLE_V1'
+            result = 'SUCCESS'
+            sourceRef = '${{ steps.pack.outputs.pin }}'
+            artifactName = '${{ steps.pack.outputs.artifact_name }}'
+            artifactFile = '${{ steps.pack.outputs.artifact }}'
+            artifactSha256 = '${{ steps.pack.outputs.sha256 }}'
+            bundleRef = 'refs/heads/factory-pinned-source'
+            runId = '${{ github.run_id }}'
+          }
+          New-Item -ItemType Directory -Force '.verification' | Out-Null
+          $record | ConvertTo-Json -Depth 5 | Set-Content '.verification/source-git-bundle-attested.json' -Encoding UTF8
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f '.verification/source-git-bundle-attested.json'
+          git commit -m 'verify: attest pinned upstream git bundle'
+          git pull --rebase origin main
+          git push origin HEAD:main
