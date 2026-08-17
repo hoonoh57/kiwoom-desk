@@ -1,5 +1,6 @@
 name: Export Pinned Git Bundle One-Time
 
+# One-time cloneable bundle export for exact pinned Factory verification.
 on:
   push:
     branches: [main]
