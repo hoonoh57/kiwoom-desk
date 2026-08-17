@@ -28,13 +28,17 @@ test('ChartForm provides generic state/data capabilities through the one Host on
   }
 });
 
-test('opaque restored chart data is identity-checked by the base service itself', async () => {
+test('opaque chart data snapshot requires the last committed data identity', async () => {
   const source = await fs.readFile(new URL('../src/forms/ChartForm.ts', import.meta.url), 'utf8');
 
   assert.match(source, /private runtimeDataIdentity\(\): string/);
   assert.match(source, /state\.code[\s\S]*state\.period[\s\S]*state\.scope[\s\S]*state\.adjusted/);
-  assert.match(source, /identity: this\.runtimeDataIdentity\(\)/);
+  assert.match(source, /const identity = this\.runtimeDataIdentity\(\)/);
+  assert.match(source, /runtimeDataLoadedIdentity !== identity/);
+  assert.match(source, /identity,/);
   assert.match(source, /raw\.identity !== this\.runtimeDataIdentity\(\)/);
+  assert.match(source, /runtimeDataLoadedIdentity = this\.runtimeDataIdentity\(\)/);
+  assert.match(source, /runtimeDataLoadedIdentity = ''/);
   assert.match(source, /this\.runtimeDataRestored = true/);
   assert.match(source, /presentRestoredRuntimeData\(\)/);
   assert.match(source, /세션 복원 · REST 재조회 없음/);
