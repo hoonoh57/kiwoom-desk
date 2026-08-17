@@ -15,14 +15,28 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/chart-runtime-host-verify.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/chart/**'
+      - 'src/forms/ChartForm.ts'
+      - 'addons/chart-*/**'
+      - 'tests/chartRuntimeHost.test.ts'
+      - 'tests/chartRuntimeStateData.test.ts'
+      - 'tests/indicator*.test.ts'
+      - 'tests/strategyAddon.test.ts'
+      - 'tests/chartDiagnostics.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/chart-runtime-host-verify.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: chart-runtime-host-verify-main
-  cancel-in-progress: false
+  group: chart-runtime-host-verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -75,25 +89,3 @@ jobs:
 
       - name: Production build
         run: npm run build
-
-      - name: Record verified source head
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force '.verification' | Out-Null
-          $record = [ordered]@{
-            schemaVersion = 1
-            gate = 'CHART_RUNTIME_HOST_RECOVERY_ATTEST_V1'
-            result = 'SUCCESS'
-            verifiedSourceHead = '${{ github.sha }}'
-            strictIdentityAncestor = 'ae9acbec9334565d80d4d9a9b64a5c3fc188a263'
-            runtimeViewport = 'src/chart/runtimeViewport.ts'
-            workflow = '.github/workflows/chart-runtime-host-verify.yml'
-            node = '24'
-            runId = '${{ github.run_id }}'
-          }
-          $record | ConvertTo-Json -Depth 5 | Set-Content '.verification/chart-runtime-host-recovery-attested.json' -Encoding UTF8
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add '.verification/chart-runtime-host-recovery-attested.json'
-          git commit -m 'verify: record chart runtime host success'
-          git push origin HEAD:main
