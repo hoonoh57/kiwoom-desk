@@ -49,8 +49,8 @@ source = replaceRequired(
 
 source = replaceRequired(
   source,
-  `      } else {\n        this.bars = rows.map((r: any) => this.mapBar(r, def, syntheticTicks));\n      }\n\n      this.refreshSeries(!more);`,
-  `      } else {\n        this.bars = rows.map((r: any) => this.mapBar(r, def, syntheticTicks));\n        this.runtimeDataLoadedIdentity = this.runtimeDataIdentity();\n      }\n\n      this.refreshSeries(!more);`,
+  `      } else {\n        this.bars = rows.map((r: any) => this.mapBar(r, def, syntheticTicks));\n      }\n\n      this.contYn = String(res?.cont_yn ?? '');\n      this.nextKey = String(res?.next_key ?? '');\n      this.refreshSeries(!more);`,
+  `      } else {\n        this.bars = rows.map((r: any) => this.mapBar(r, def, syntheticTicks));\n        this.runtimeDataLoadedIdentity = this.runtimeDataIdentity();\n      }\n\n      this.contYn = String(res?.cont_yn ?? '');\n      this.nextKey = String(res?.next_key ?? '');\n      this.refreshSeries(!more);`,
   'successful base acquisition commits identity',
 );
 
