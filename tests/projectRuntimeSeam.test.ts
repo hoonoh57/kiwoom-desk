@@ -24,9 +24,10 @@ test('generic project runtime seam is native and ordered before Workbench chart 
 
 test('project runtime seam is generic application composition, not optional feature ownership', async () => {
   const source = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
-  const start = source.indexOf('/**\n * PROJECT_RUNTIME_NATIVE_V1');
-  const end = source.indexOf('\nasync function bootstrap()', start);
-  assert.ok(start >= 0 && end > start);
+  const marker = source.indexOf('PROJECT_RUNTIME_NATIVE_V1');
+  const start = source.lastIndexOf('/**', marker);
+  const end = source.indexOf('async function bootstrap()', marker);
+  assert.ok(marker >= 0 && start >= 0 && end > marker, 'native project-runtime seam boundaries must exist independent of EOL style');
   const seam = source.slice(start, end);
 
   for (const forbidden of [
