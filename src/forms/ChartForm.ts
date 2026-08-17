@@ -4,7 +4,10 @@ import {
   ChartRuntimeServiceIds,
   createChartRuntimeHost,
   type ChartRuntimeBarChange,
+  type ChartRuntimeCoreState,
+  type ChartRuntimeDataService,
   type ChartRuntimeHost,
+  type ChartRuntimeStateService,
 } from '../chart/runtimeHost';
 import {
   CHART_TICK_SCOPES,
@@ -76,6 +79,10 @@ export class ChartForm extends ChildForm {
   private volume: any;
   // CHART_RUNTIME_HOST_NATIVE_V1 — the one normal-chart integration seam.
   private runtimeHost?: ChartRuntimeHost;
+  // CHART_RUNTIME_STATE_DATA_SERVICES_V1 — generic base capabilities only.
+  private runtimeBootstrapOpen = true;
+  private runtimeDataRestored = false;
+  private readonly runtimeStateSubscribers = new Set<(state: ChartRuntimeCoreState) => void>();
   private ro?: ResizeObserver;
 
   private quoteGroup = '';
@@ -106,12 +113,16 @@ export class ChartForm extends ChildForm {
         [ChartRuntimeServiceIds.APP_API]: this.ctx.api,
         [ChartRuntimeServiceIds.APP_DOCK]: this.ctx.dock,
         [ChartRuntimeServiceIds.CHART_PARAMS]: this.params,
+        [ChartRuntimeServiceIds.CHART_STATE]: this.runtimeStateService(),
+        [ChartRuntimeServiceIds.CHART_DATA]: this.runtimeDataService(),
       },
       reportError: message => {
         this.ctx.log.warn(message);
         this.status(message);
       },
     });
+    // Plugins may apply bootstrap state/data only while the Host is being created.
+    this.runtimeBootstrapOpen = false;
 
     this.renderShell();
     void this.boot();
@@ -121,6 +132,7 @@ export class ChartForm extends ChildForm {
       this.clearRealtimeRegistration();
       this.code = this.plainCode(msg.code);
       this.name = msg.name ?? '';
+      this.notifyRuntimeCoreState();
       const inp = this.$<HTMLInputElement>('#cCode');
       if (inp) inp.value = this.code;
       const nm = this.$('#cName');
@@ -149,6 +161,131 @@ export class ChartForm extends ChildForm {
         this.liveFrame = undefined;
       }
     });
+  }
+
+  private runtimeCoreState(): ChartRuntimeCoreState {
+    return {
+      code: this.code,
+      period: this.period.id,
+      scope: this.scope,
+      adjusted: this.upd === '1',
+      volumeRaw: this.volRaw,
+    };
+  }
+
+  private runtimeDataIdentity(): string {
+    const state = this.runtimeCoreState();
+    return [state.code, state.period, state.scope, state.adjusted ? '1' : '0'].join('|');
+  }
+
+  private applyRuntimeCoreState(state: Partial<ChartRuntimeCoreState>): void {
+    if (!this.runtimeBootstrapOpen) {
+      throw new Error('Chart runtime core state may only be applied during bootstrap.');
+    }
+
+    if (typeof state.code === 'string') {
+      const code = this.plainCode(state.code);
+      if (code) this.code = code;
+    }
+
+    let periodChanged = false;
+    if (typeof state.period === 'string') {
+      const hit = PERIODS.find(item => item.id === state.period);
+      if (hit && hit !== this.period) {
+        this.period = hit;
+        periodChanged = true;
+      }
+    }
+
+    const defaultScope = this.period.id === 'min' ? '5' : (this.period.scopes?.[0]?.v ?? '1');
+    if (typeof state.scope === 'string') {
+      const requested = state.scope.trim();
+      this.scope = this.period.scopes?.some(item => item.v === requested) ? requested : defaultScope;
+    } else if (periodChanged) {
+      this.scope = defaultScope;
+    }
+
+    if (typeof state.adjusted === 'boolean') this.upd = state.adjusted ? '1' : '0';
+    if (typeof state.volumeRaw === 'boolean') this.volRaw = state.volumeRaw;
+    this.notifyRuntimeCoreState();
+  }
+
+  private notifyRuntimeCoreState(): void {
+    const state = this.runtimeCoreState();
+    for (const handler of [...this.runtimeStateSubscribers]) {
+      try { handler(structuredClone(state)); } catch { /* adapter failure cannot break Chart Core */ }
+    }
+  }
+
+  private runtimeStateService(): ChartRuntimeStateService {
+    return {
+      read: () => structuredClone(this.runtimeCoreState()),
+      apply: state => this.applyRuntimeCoreState(state),
+      subscribe: handler => {
+        this.runtimeStateSubscribers.add(handler);
+        return () => this.runtimeStateSubscribers.delete(handler);
+      },
+    };
+  }
+
+  private captureRuntimeDataSnapshot(): unknown {
+    if (!this.bars.length) return undefined;
+    return {
+      schemaVersion: 1,
+      identity: this.runtimeDataIdentity(),
+      name: this.name,
+      bars: structuredClone(this.bars),
+      sourceTickBars: structuredClone(this.sourceTickBars),
+      syntheticLiveBars: structuredClone(this.syntheticLiveBars),
+      contYn: this.contYn,
+      nextKey: this.nextKey,
+      liveTickCount: this.liveTickCount,
+      liveTickSynced: this.liveTickSynced,
+    };
+  }
+
+  private restoreRuntimeDataSnapshot(value: unknown): boolean {
+    if (!this.runtimeBootstrapOpen || !value || typeof value !== 'object') return false;
+    const raw = value as Record<string, any>;
+    if (raw.schemaVersion !== 1 || raw.identity !== this.runtimeDataIdentity()) return false;
+    if (!Array.isArray(raw.bars) || raw.bars.length === 0) return false;
+
+    this.name = typeof raw.name === 'string' ? raw.name : '';
+    this.bars = structuredClone(raw.bars as Bar[]);
+    this.sourceTickBars = Array.isArray(raw.sourceTickBars)
+      ? structuredClone(raw.sourceTickBars as Bar[])
+      : [];
+    this.syntheticLiveBars = Array.isArray(raw.syntheticLiveBars)
+      ? structuredClone(raw.syntheticLiveBars as Bar[])
+      : [];
+    this.contYn = raw.contYn === 'Y' ? 'Y' : '';
+    this.nextKey = typeof raw.nextKey === 'string' ? raw.nextKey : '';
+    this.liveTickCount = Number.isFinite(Number(raw.liveTickCount)) ? Number(raw.liveTickCount) : 0;
+    this.liveTickSynced = raw.liveTickSynced === true;
+    this.runtimeDataRestored = true;
+    return true;
+  }
+
+  private runtimeDataService(): ChartRuntimeDataService {
+    return {
+      capture: () => this.captureRuntimeDataSnapshot(),
+      restore: snapshot => this.restoreRuntimeDataSnapshot(snapshot),
+      wasRestored: () => this.runtimeDataRestored,
+    };
+  }
+
+  private presentRestoredRuntimeData(): boolean {
+    if (!this.runtimeDataRestored || !this.bars.length || !this.candles) return false;
+    this.refreshSeries(true);
+    const nameEl = this.$('#cName');
+    if (nameEl) nameEl.textContent = this.name;
+    const syntheticTicks = this.period.id === 'tick' && isSyntheticTickScope(this.scope);
+    this.setTitle(`차트 ${this.code}${this.name ? ' ' + this.name : ''} · ${this.periodCaption(this.period, this.scope)}`);
+    this.status(`${this.loadedStatus(this.period, this.scope, syntheticTicks)} · 세션 복원 · REST 재조회 없음`);
+    this.paintLegend(null);
+    this.syncRealtimeRegistration();
+    this.ctx.bus.emit(Topics.SymbolSelected, { source: this.formKey, code: this.code, name: this.name });
+    return true;
   }
 
   private renderShell(): void {
@@ -191,6 +328,7 @@ export class ChartForm extends ChildForm {
       const next = this.plainCode((this.$<HTMLInputElement>('#cCode')!.value || '').trim());
       if (next !== this.code) this.clearRealtimeRegistration();
       this.code = next;
+      this.notifyRuntimeCoreState();
       void this.load(false);
     });
 
@@ -204,6 +342,7 @@ export class ChartForm extends ChildForm {
       this.clearRealtimeRegistration();
       this.period = def;
       this.scope = def.id === 'min' ? '5' : (def.scopes?.[0]?.v ?? '1');
+      this.notifyRuntimeCoreState();
       this.bars = [];
       this.resetSyntheticState();
       this.disposeChart();
@@ -213,16 +352,19 @@ export class ChartForm extends ChildForm {
 
     this.$('#cScope')?.addEventListener('change', e => {
       this.scope = (e.target as HTMLSelectElement).value;
+      this.notifyRuntimeCoreState();
       void this.load(false);
     });
 
     this.$('#cUpd')?.addEventListener('change', e => {
       this.upd = (e.target as HTMLInputElement).checked ? '1' : '0';
+      this.notifyRuntimeCoreState();
       void this.load(false);
     });
 
     this.$('#cVolRaw')?.addEventListener('change', e => {
       this.volRaw = (e.target as HTMLInputElement).checked;
+      this.notifyRuntimeCoreState();
       this.computeVolCap();
       this.volume?.applyOptions({});
     });
@@ -233,6 +375,7 @@ export class ChartForm extends ChildForm {
 
   private async boot(): Promise<void> {
     if (!this.chart) await this.initChart();
+    if (this.presentRestoredRuntimeData()) return;
     await this.load(false);
   }
 
@@ -365,6 +508,7 @@ export class ChartForm extends ChildForm {
     const syntheticTicks = def.id === 'tick' && isSyntheticTickScope(requestedScope);
 
     if (!more) {
+      this.runtimeDataRestored = false;
       this.clearRealtimeRegistration();
       this.liveTickCount = 0;
       this.liveTickSynced = false;
@@ -887,5 +1031,6 @@ export class ChartForm extends ChildForm {
   protected onRelease(): void {
     this.runtimeHost?.dispose();
     this.runtimeHost = undefined;
+    this.runtimeStateSubscribers.clear();
   }
 }
