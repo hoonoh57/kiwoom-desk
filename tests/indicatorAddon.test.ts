@@ -247,7 +247,9 @@ test('ChartForm keeps indicator names and calculations out of the base chart', a
   assert.equal(source.includes('단순 이동평균'), false);
   assert.equal(source.includes('SuperTrend'), false);
   assert.equal(source.includes('DMI'), false);
-  assert.equal(source.includes('createChartExtensions'), true);
+  assert.equal(source.includes('CHART_RUNTIME_HOST_NATIVE_V1'), true);
+  assert.equal(source.includes('createChartRuntimeHost'), true);
+  assert.equal(source.includes('createChartExtensions'), false);
 });
 
 test('indicator addon is enabled by one removable dynamic import', async () => {

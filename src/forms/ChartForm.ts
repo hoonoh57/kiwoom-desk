@@ -1,10 +1,11 @@
 import { ChildForm } from './ChildForm';
 import { Topics } from '../core/events';
 import {
-  createChartExtensions,
-  type ChartBarChange,
-  type ChartExtensionGroup,
-} from '../chart/extensions';
+  ChartRuntimeServiceIds,
+  createChartRuntimeHost,
+  type ChartRuntimeBarChange,
+  type ChartRuntimeHost,
+} from '../chart/runtimeHost';
 import {
   CHART_TICK_SCOPES,
   TICK_SOURCE_SCOPE,
@@ -73,7 +74,8 @@ export class ChartForm extends ChildForm {
   private chart: any;
   private candles: any;
   private volume: any;
-  private extensions?: ChartExtensionGroup;
+  // CHART_RUNTIME_HOST_NATIVE_V1 — the one normal-chart integration seam.
+  private runtimeHost?: ChartRuntimeHost;
   private ro?: ResizeObserver;
 
   private quoteGroup = '';
@@ -97,6 +99,19 @@ export class ChartForm extends ChildForm {
 
     this.scope = this.period.id === 'min' ? '5' : (this.period.scopes?.[0]?.v ?? '1');
     this.resetSyntheticState();
+
+    this.runtimeHost = createChartRuntimeHost({
+      getSymbol: () => this.code,
+      initialServices: {
+        [ChartRuntimeServiceIds.APP_API]: this.ctx.api,
+        [ChartRuntimeServiceIds.APP_DOCK]: this.ctx.dock,
+        [ChartRuntimeServiceIds.CHART_PARAMS]: this.params,
+      },
+      reportError: message => {
+        this.ctx.log.warn(message);
+        this.status(message);
+      },
+    });
 
     this.renderShell();
     void this.boot();
@@ -161,6 +176,16 @@ export class ChartForm extends ChildForm {
         <div class="chart-canvas" id="cCanvas"></div>
         <div class="chart-status" id="cStatus">준비중…</div>
       </div>`);
+
+    const runtimeCanvas = this.$<HTMLElement>('#cCanvas');
+    const runtimeToolbar = this.$<HTMLElement>('#cExt');
+    if (runtimeCanvas && runtimeToolbar) {
+      this.runtimeHost?.shellReady({
+        root: this.root,
+        canvas: runtimeCanvas,
+        toolbar: runtimeToolbar,
+      });
+    }
 
     this.$('#cGo')?.addEventListener('click', () => {
       const next = this.plainCode((this.$<HTMLInputElement>('#cCode')!.value || '').trim());
@@ -282,17 +307,14 @@ export class ChartForm extends ChildForm {
       // lightweight-charts v5 초기버전 호환
     }
 
-    const extensionToolbar = this.$('#cExt');
+    const extensionToolbar = this.$<HTMLElement>('#cExt');
     if (extensionToolbar) {
-      this.extensions = createChartExtensions({
+      this.runtimeHost?.attachSurface({
         chart: this.chart,
         lc: LC,
         toolbar: extensionToolbar,
+        primarySeries: this.candles,
         firstAddonPane: 2,
-        reportError: message => {
-          this.ctx.log.warn(message);
-          this.status(message);
-        },
       });
     }
 
@@ -311,8 +333,7 @@ export class ChartForm extends ChildForm {
   private disposeChart(): void {
     this.ro?.disconnect();
     this.ro = undefined;
-    this.extensions?.dispose();
-    this.extensions = undefined;
+    this.runtimeHost?.detachSurface();
     try {
       this.chart?.remove();
     } catch {
@@ -511,6 +532,7 @@ export class ChartForm extends ChildForm {
 
   private refreshSeries(fit: boolean): void {
     this.computeVolCap();
+    this.runtimeHost?.beforeBarsReset(this.bars);
     this.candles.setData(this.bars.map(b => ({
       time: b.time,
       open: b.open,
@@ -519,7 +541,7 @@ export class ChartForm extends ChildForm {
       close: b.close,
     })));
     this.volume.setData(this.bars.map(b => this.volumePoint(b)));
-    this.extensions?.onBarsReset(this.bars);
+    this.runtimeHost?.barsReset(this.bars);
     if (fit) this.chart.timeScale().fitContent();
   }
 
@@ -588,7 +610,7 @@ export class ChartForm extends ChildForm {
     const changed = this.applyRealtimeTrade(price, tradeQty, hhmmss, values);
     if (!changed) return;
 
-    const change: ChartBarChange = this.bars.length > beforeLength ? 'append' : 'replace';
+    const change: ChartRuntimeBarChange = this.bars.length > beforeLength ? 'append' : 'replace';
 
     this.candles.update({
       time: changed.time,
@@ -598,7 +620,7 @@ export class ChartForm extends ChildForm {
       close: changed.close,
     });
     this.volume.update(this.volumePoint(changed));
-    this.extensions?.onBarChanged(changed, change, this.bars);
+    this.runtimeHost?.barChanged(changed, change, this.bars);
     this.paintLegend(null);
     this.scheduleLiveStatus();
   }
@@ -860,5 +882,10 @@ export class ChartForm extends ChildForm {
     if (visible && this.chart) {
       requestAnimationFrame(() => this.chart?.timeScale().fitContent());
     }
+  }
+
+  protected onRelease(): void {
+    this.runtimeHost?.dispose();
+    this.runtimeHost = undefined;
   }
 }
