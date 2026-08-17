@@ -1,0 +1,53 @@
+name: Chart Runtime Host Verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/chart/**'
+      - 'src/forms/ChartForm.ts'
+      - 'addons/chart-*/**'
+      - 'tests/chartRuntimeHost.test.ts'
+      - 'tests/indicator*.test.ts'
+      - 'tests/strategyAddon.test.ts'
+      - 'tests/chartDiagnostics.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/chart-runtime-host-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify canonical runtime host
+        run: npx tsx --test tests/chartRuntimeHost.test.ts
+
+      - name: Verify indicator compatibility
+        run: npm run test:indicators
+
+      - name: Verify strategy compatibility
+        run: npm run test:strategies
+
+      - name: Verify diagnostics compatibility
+        run: npm run test:diagnostics
+
+      - name: Production build
+        run: npm run build
