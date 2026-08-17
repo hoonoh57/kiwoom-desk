@@ -9,9 +9,38 @@ export const ChartRuntimeServiceIds = Object.freeze({
   APP_DOCK: 'app.dock',
   CHART_PARAMS: 'chart.params',
   CHART_STATE: 'chart.state',
+  CHART_DATA: 'chart.data',
+  CHART_PERSISTENCE: 'chart.persistence',
   CHART_VIEWPORT: 'chart.viewport',
   CHART_PROPERTIES: 'chart.properties',
 } as const);
+
+export interface ChartRuntimeCoreState {
+  code: string;
+  period: string;
+  scope: string;
+  adjusted: boolean;
+  volumeRaw: boolean;
+}
+
+export interface ChartRuntimeStateService {
+  read(): ChartRuntimeCoreState;
+  apply(state: Partial<ChartRuntimeCoreState>): void;
+  subscribe(handler: (state: ChartRuntimeCoreState) => void): () => void;
+}
+
+/**
+ * Opaque base-chart data snapshot bridge.
+ *
+ * Plugins may store/restore the snapshot but must not inspect ChartForm internals.
+ * This keeps same-session caching outside the drawing/controller implementation
+ * without exposing tick/synthetic/continuation fields as feature-specific APIs.
+ */
+export interface ChartRuntimeDataService {
+  capture(): unknown;
+  restore(snapshot: unknown): boolean;
+  wasRestored(): boolean;
+}
 
 export interface ChartRuntimeServiceRegistry {
   get<T = unknown>(id: string): T | undefined;
