@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
+// Disposable PR probe: forces native project-runtime verification to remain directly observable.
 test('generic project runtime seam is native and ordered before Workbench chart creation', async () => {
   const source = await fs.readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
 
