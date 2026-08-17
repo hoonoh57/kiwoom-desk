@@ -8,6 +8,7 @@ on:
       - 'src/forms/ChartForm.ts'
       - 'addons/chart-*/**'
       - 'tests/chartRuntimeHost.test.ts'
+      - 'tests/chartRuntimeStateData.test.ts'
       - 'tests/indicator*.test.ts'
       - 'tests/strategyAddon.test.ts'
       - 'tests/chartDiagnostics.test.ts'
@@ -38,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Verify canonical runtime host
-        run: npx tsx --test tests/chartRuntimeHost.test.ts
+        run: npx tsx --test tests/chartRuntimeHost.test.ts tests/chartRuntimeStateData.test.ts
 
       - name: Verify indicator compatibility
         run: npm run test:indicators
