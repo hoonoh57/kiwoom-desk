@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import {
   ChartRuntimeServiceIds,
   createChartRuntimeHost,
@@ -161,4 +162,37 @@ test('legacy registerChartExtension is only a compatibility adapter over the sam
   legacy.dispose();
 
   assert.deepEqual(calls, ['created:2', 'reset:0', 'append', 'legacy-dispose']);
+});
+
+test('ChartForm uses one native runtime host seam and contains no optional feature implementation', async () => {
+  const source = await fs.readFile(new URL('../src/forms/ChartForm.ts', import.meta.url), 'utf8');
+
+  assert.equal(source.includes('CHART_RUNTIME_HOST_NATIVE_V1'), true);
+  assert.equal(source.includes('createChartRuntimeHost'), true);
+  assert.equal(source.includes('createChartExtensions'), false);
+  assert.equal(source.includes('ChartExtensionGroup'), false);
+
+  for (const forbidden of [
+    'SuperTrend',
+    'DMI',
+    '단순 이동평균',
+    'ThemeContext',
+    'ResearchFeature',
+    'PropertyGrid',
+    'SOX-N15-V1',
+  ]) {
+    assert.equal(source.includes(forbidden), false, `ChartForm contains optional feature implementation: ${forbidden}`);
+  }
+
+  for (const lifecycle of [
+    'runtimeHost?.shellReady',
+    'runtimeHost?.attachSurface',
+    'runtimeHost?.beforeBarsReset',
+    'runtimeHost?.barsReset',
+    'runtimeHost?.barChanged',
+    'runtimeHost?.detachSurface',
+    'runtimeHost?.dispose',
+  ]) {
+    assert.equal(source.includes(lifecycle), true, `ChartForm missing native Host lifecycle: ${lifecycle}`);
+  }
 });
