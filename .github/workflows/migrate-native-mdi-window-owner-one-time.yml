@@ -1,0 +1,75 @@
+name: Migrate Native MDI Window Owner One-Time
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/migrate-native-mdi-window-owner-one-time.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: migrate-native-mdi-window-owner-one-time
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Make DockWindowHeaderActions form-agnostic
+        shell: pwsh
+        run: |
+          $p = 'src/shell/DockHost.ts'
+          $s = Get-Content $p -Raw -Encoding UTF8
+          $old = @'
+  private isChartPanel(panel: IDockviewPanel | undefined): boolean {
+    return String((panel?.params as any)?.formId ?? '') === 'chart';
+  }
+
+'@
+          if (($s.Split($old).Count - 1) -ne 1) { throw 'Expected exactly one chart-only native MDI filter block.' }
+          $s = $s.Replace($old, '')
+          $s = $s.Replace('    if (!panel || !this.isChartPanel(panel)) return;', '    if (!panel) return;')
+          $s = $s.Replace("    if (!panel || !this.isChartPanel(panel)) {`n      this.element.hidden = true;`n      return;`n    }", "    if (!panel) {`n      this.element.hidden = true;`n      return;`n    }")
+          $s = $s.Replace('// 키움식 창 제어는 floating child / 독립 popout에만 표시한다.', '// Native MDI window controls belong to every floating child / independent popout regardless of form type.')
+          Set-Content $p $s -Encoding UTF8 -NoNewline
+
+          $t = 'tests/dockWindowControls.test.ts'
+          $x = Get-Content $t -Raw -Encoding UTF8
+          $marker = "  assert.match(dock, /data-win=\"close\"/);"
+          if (-not $x.Contains($marker)) { throw 'dockWindowControls test marker missing.' }
+          $insert = @'
+  assert.match(dock, /data-win="close"/);
+  assert.equal(dock.includes('isChartPanel'), false, 'native MDI shell must not hide controls behind a form-specific filter');
+'@
+          $x = $x.Replace($marker, $insert.TrimEnd())
+          Set-Content $t $x -Encoding UTF8 -NoNewline
+
+          git diff --check
+      - name: Verify native MDI owner
+        shell: pwsh
+        run: |
+          npm run test:chart-window
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          exit $LASTEXITCODE
+      - name: Commit verified framework fix and remove one-time gate
+        shell: pwsh
+        run: |
+          git rm '.github/workflows/migrate-native-mdi-window-owner-one-time.yml'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/shell/DockHost.ts tests/dockWindowControls.test.ts
+          git commit -m 'fix: make native MDI window controls form-agnostic'
+          git pull --rebase origin main
+          git push origin HEAD:main
