@@ -73,3 +73,4 @@ jobs:
           git commit -m 'fix: make native MDI window controls form-agnostic'
           git pull --rebase origin main
           git push origin HEAD:main
+# trigger after workflow became active on default branch
