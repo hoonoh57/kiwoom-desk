@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pin='bdf3f22085a5106df67384c4479cd0211f203b7a'
+          pin='829b899d3a2e58e63ffcd9a990a345ee0f0c6dde'
           git cat-file -e "$pin^{commit}"
           mkdir -p .verification
           ref='refs/heads/factory-pinned-source'
@@ -75,3 +75,4 @@ jobs:
           git commit -m 'verify: attest pinned upstream git bundle'
           git pull --rebase origin main
           git push origin HEAD:main
+# verified PROJECT_RUNTIME_NATIVE_V1 pin
