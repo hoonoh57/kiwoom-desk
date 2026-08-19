@@ -7,7 +7,7 @@
     "dev": "concurrently -k -n WEB,API -c cyan,magenta \"vite\" \"tsx watch server/index.ts\"",
     "build": "tsc --noEmit && vite build",
     "test:tick": "tsx --test tests/tickAggregation.test.ts",
-    "test:indicators": "tsx --test tests/indicatorAddon.test.ts tests/indicatorOverlay.test.ts tests/jmaIndicator.test.ts tests/disparityIndicator.test.ts tests/indicatorIncrementalContract.test.ts tests/vwapIndicator.test.ts tests/nativeAddonLifecycle.test.ts",
+    "test:indicators": "tsx --test tests/indicatorAddon.test.ts tests/indicatorOverlay.test.ts tests/jmaIndicator.test.ts tests/disparityIndicator.test.ts tests/indicatorIncrementalContract.test.ts tests/vwapIndicator.test.ts tests/nativeAddonLifecycle.test.ts tests/chartRuntimeAddonState.test.ts",
     "test:strategies": "tsx --test tests/strategyAddon.test.ts",
     "test:diagnostics": "tsx --test tests/chartDiagnostics.test.ts",
     "test:api": "tsx --test tests/KiwoomClient.test.ts",
