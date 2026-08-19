@@ -116,6 +116,59 @@ test('runtime host exposes one generic add-on JSON state capability and visual p
   host.dispose();
 });
 
+test('master add-on OFF/ON changes only visualsVisible and preserves the complete nested child subtree', () => {
+  resetChartRuntimePluginsForTests();
+  const visibility: boolean[] = [];
+
+  registerChartPlugin('opaque-probe', runtime => {
+    const registration = runtime.visuals.register('opaque-probe', {
+      setVisible: visible => visibility.push(visible),
+    });
+    return { dispose: () => registration.dispose() };
+  });
+
+  const host = createChartRuntimeHost({
+    getSymbol: () => '005930',
+    initialAddonState: {
+      schemaVersion: 1,
+      visualsVisible: true,
+      addons: {
+        'opaque-instance': {
+          enabled: true,
+          state: {
+            style: {
+              'opaque-output': {
+                visible: false,
+                lineWidth: 3,
+              },
+            },
+            params: {
+              period: 14,
+            },
+          },
+        },
+      },
+    },
+    reportError: message => assert.fail(message),
+  });
+
+  const before = host.getAddonStateSnapshot();
+  const beforeNode = JSON.stringify(before.addons['opaque-instance']);
+
+  host.setAddonVisualsVisible(false);
+  const hidden = host.getAddonStateSnapshot();
+  assert.equal(hidden.visualsVisible, false);
+  assert.equal(JSON.stringify(hidden.addons['opaque-instance']), beforeNode);
+
+  host.setAddonVisualsVisible(true);
+  const restored = host.getAddonStateSnapshot();
+  assert.equal(restored.visualsVisible, true);
+  assert.equal(JSON.stringify(restored.addons['opaque-instance']), beforeNode);
+  assert.deepEqual(visibility, [true, false, true]);
+
+  host.dispose();
+});
+
 test('runtime host replaces authoritative add-on document before subscribers re-project state', () => {
   resetChartRuntimePluginsForTests();
   const observed: unknown[] = [];
