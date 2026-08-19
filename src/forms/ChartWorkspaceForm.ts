@@ -44,6 +44,8 @@ interface SymbolMessage {
  */
 export class ChartWorkspaceForm extends ChildForm {
   private chart?: ChartForm;
+  /** Opaque child state owned semantically by ChartForm/runtime, never interpreted here. */
+  private chartState: unknown;
   private userLocked = true;
   private controlMode: ChartControlMode = 'manual';
   private positions: StrategyPositionSnapshot[] = [];
@@ -55,6 +57,12 @@ export class ChartWorkspaceForm extends ChildForm {
     const settings = loadWorkbenchSettings();
     const rememberedQty = this.orderQty || String(settings.order.defaultQuantity);
     this.orderQty = String(this.params.qty ?? rememberedQty);
+
+    // Parent/session restore may replace the complete opaque chart child state.
+    // Workspace must not inspect core/add-on/nested child schemas.
+    if (this.params.chartState !== undefined) {
+      this.chartState = structuredClone(this.params.chartState);
+    }
 
     if (typeof this.params.locked === 'boolean') {
       this.userLocked = this.params.locked;
@@ -107,7 +115,22 @@ export class ChartWorkspaceForm extends ChildForm {
     if (!host) return;
 
     const childContext = this.createChartContext();
-    this.chart = new ChartForm(childContext, this.params);
+    const forwardState = typeof this.params.onChartStateChange === 'function'
+      ? this.params.onChartStateChange as (state: unknown) => void
+      : undefined;
+    const childParams = {
+      ...this.params,
+      chartState: this.chartState === undefined ? undefined : structuredClone(this.chartState),
+      onChartStateChange: (state: unknown) => {
+        const snapshot = state === undefined ? undefined : structuredClone(state);
+        this.chartState = snapshot;
+        // Keep this parent instance's opaque params current for its own re-init path.
+        this.params.chartState = snapshot;
+        forwardState?.(snapshot === undefined ? undefined : structuredClone(snapshot));
+      },
+    };
+
+    this.chart = new ChartForm(childContext, childParams);
     this.chart.attach(host, this.panelApi);
 
     this.track(() => {
