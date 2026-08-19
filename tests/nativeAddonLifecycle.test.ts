@@ -50,6 +50,119 @@ test('native visual registry hides and restores optional visuals without feature
   host.dispose();
 });
 
+test('runtime host exposes one generic add-on JSON state capability and visual projection follows it', () => {
+  resetChartRuntimePluginsForTests();
+  const visibility: boolean[] = [];
+  let stateSeenByPlugin: unknown;
+
+  registerChartPlugin('opaque-probe', runtime => {
+    stateSeenByPlugin = runtime.addonState.read('opaque-instance');
+    const registration = runtime.visuals.register('opaque-probe', {
+      setVisible: visible => visibility.push(visible),
+    });
+    return { dispose: () => registration.dispose() };
+  });
+
+  const host = createChartRuntimeHost({
+    getSymbol: () => '005930',
+    initialAddonState: {
+      schemaVersion: 1,
+      visualsVisible: false,
+      addons: {
+        'opaque-instance': {
+          enabled: true,
+          state: {
+            child: {
+              nested: {
+                visible: false,
+                value: 7,
+              },
+            },
+          },
+        },
+      },
+    },
+    reportError: message => assert.fail(message),
+  });
+
+  assert.deepEqual(stateSeenByPlugin, {
+    enabled: true,
+    state: {
+      child: {
+        nested: {
+          visible: false,
+          value: 7,
+        },
+      },
+    },
+  });
+  assert.equal(host.areAddonVisualsVisible(), false);
+  assert.deepEqual(visibility, [false]);
+
+  host.setAddonVisualsVisible(true);
+  const snapshot = host.getAddonStateSnapshot();
+  assert.equal(snapshot.visualsVisible, true);
+  assert.equal(snapshot.addons['opaque-instance']?.enabled, true);
+  assert.deepEqual(snapshot.addons['opaque-instance']?.state, {
+    child: {
+      nested: {
+        visible: false,
+        value: 7,
+      },
+    },
+  });
+  assert.deepEqual(visibility, [false, true]);
+
+  host.dispose();
+});
+
+test('runtime host replaces authoritative add-on document before subscribers re-project state', () => {
+  resetChartRuntimePluginsForTests();
+  const observed: unknown[] = [];
+  const visibility: boolean[] = [];
+
+  registerChartPlugin('opaque-probe', runtime => {
+    const unsubscribe = runtime.addonState.subscribe('instance-a', node => {
+      observed.push(node?.state);
+    });
+    const registration = runtime.visuals.register('opaque-probe', {
+      setVisible: visible => visibility.push(visible),
+    });
+    return {
+      dispose: () => {
+        unsubscribe();
+        registration.dispose();
+      },
+    };
+  });
+
+  const host = createChartRuntimeHost({
+    getSymbol: () => '005930',
+    reportError: message => assert.fail(message),
+  });
+
+  host.replaceAddonState({
+    schemaVersion: 1,
+    visualsVisible: false,
+    addons: {
+      'instance-a': {
+        enabled: true,
+        state: {
+          layer: {
+            childVisible: false,
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(observed, [{ layer: { childVisible: false } }]);
+  assert.equal(host.getAddonStateSnapshot().visualsVisible, false);
+  assert.deepEqual(visibility, [true, false]);
+
+  host.dispose();
+});
+
 test('core-only runtime remains valid while optional visuals are globally off', () => {
   resetChartRuntimePluginsForTests();
   const errors: string[] = [];
