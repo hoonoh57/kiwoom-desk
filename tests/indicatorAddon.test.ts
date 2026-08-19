@@ -7,8 +7,14 @@ import obvPlugin from '../addons/chart-indicators/plugins/obv';
 import macdPlugin from '../addons/chart-indicators/plugins/macd';
 import superTrendPlugin from '../addons/chart-indicators/plugins/supertrend';
 import dmiPlugin from '../addons/chart-indicators/plugins/dmi';
+import { indicatorSeriesOptions } from '../addons/chart-indicators/IndicatorHost';
 import type { ChartBar } from '../src/chart/extensions';
-import type { IndicatorParams, IndicatorPlugin } from '../addons/chart-indicators/types';
+import type {
+  IndicatorInstanceConfig,
+  IndicatorOutputDef,
+  IndicatorParams,
+  IndicatorPlugin,
+} from '../addons/chart-indicators/types';
 
 function bar(time: number, close: number, volume = 1): ChartBar {
   return {
@@ -214,6 +220,32 @@ test('all indicator plugins honor real-time append/replace incremental parity', 
   for (const [plugin, params] of cases) assertIncrementalParity(plugin, params);
 });
 
+test('generic nested output visibility state overrides output defaults during chart projection', () => {
+  const output: IndicatorOutputDef = {
+    id: 'opaque-output',
+    label: 'Opaque Output',
+    type: 'line',
+    pane: 'own',
+    options: { visible: true, lineWidth: 2 },
+  };
+  const config: IndicatorInstanceConfig = {
+    instanceId: 'instance-a',
+    indicatorId: 'opaque-indicator',
+    pluginVersion: 1,
+    enabled: true,
+    params: {},
+    style: {
+      'opaque-output': {
+        visible: false,
+      },
+    },
+  };
+
+  const options = indicatorSeriesOptions(output, config);
+  assert.equal(options.visible, false);
+  assert.equal(options.lineWidth, 2);
+});
+
 test('IndicatorHost uses setData only for reset and update for live changes', async () => {
   const host = await readFile(new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url), 'utf8');
 
@@ -235,6 +267,8 @@ test('indicator JSON schema persists pane order and height with v1 migration bou
   assert.equal(host.includes('setHeight'), true);
   assert.equal(host.includes('data-action="move-up"'), true);
   assert.equal(host.includes('data-action="move-down"'), true);
+  assert.equal(host.includes('data-role="output-visible"'), true);
+  assert.equal(host.includes('config.style[outputId]'), true);
 });
 
 test('ChartForm keeps indicator names and calculations out of the base chart', async () => {
