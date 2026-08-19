@@ -8,7 +8,9 @@ import {
 import { IndicatorHost } from './IndicatorHost';
 import './indicator.css';
 
-registerChartPlugin('indicators', runtime => {
+const INDICATOR_STATE_ID = 'indicators';
+
+registerChartPlugin(INDICATOR_STATE_ID, runtime => {
   let surface: ChartRuntimeSurface | undefined;
   let host: IndicatorHost | undefined;
   let currentBars: readonly ChartRuntimeBar[] = [];
@@ -29,11 +31,13 @@ registerChartPlugin('indicators', runtime => {
       primarySeries: surface.primarySeries,
       firstAddonPane: surface.firstAddonPane,
       reportError: runtime.reportError,
+      addonState: runtime.addonState,
+      stateId: INDICATOR_STATE_ID,
     });
     if (currentBars.length) host.onBarsReset(currentBars);
   };
 
-  const visualRegistration = runtime.visuals.register('indicators', {
+  const visualRegistration = runtime.visuals.register(INDICATOR_STATE_ID, {
     setVisible(visible) {
       visualVisible = visible;
       if (!visible) {
