@@ -1,7 +1,9 @@
 import type { ChartBar, ChartBarChange } from '../../../src/chart/extensions';
-import jmaPlugin from '../../chart-indicators/plugins/jma';
-import vwapPlugin from '../../chart-indicators/plugins/vwap';
-import type { IndicatorPoint } from '../../chart-indicators/types';
+import {
+  createJmaAnalysis,
+  createVwapAnalysis,
+  type AnalysisPoint,
+} from '../../chart-analysis/vwapJma';
 import type {
   StrategyCalculator,
   StrategyEvaluation,
@@ -31,7 +33,7 @@ function sessionOf(bar: ChartBar): string {
   return String(bar.time ?? '').slice(0, 10);
 }
 
-function valueOf(point: IndicatorPoint | null | undefined): number | null {
+function valueOf(point: AnalysisPoint | null | undefined): number | null {
   const n = Number(point?.value);
   return Number.isFinite(n) ? n : null;
 }
@@ -46,7 +48,7 @@ function integerParam(value: unknown, fallback: number, min: number, max: number
   return Math.trunc(numberParam(value, fallback, min, max));
 }
 
-function pointMap(rows: IndicatorPoint[] | undefined): Map<string, number> {
+function pointMap(rows: AnalysisPoint[] | undefined): Map<string, number> {
   const map = new Map<string, number>();
   for (const row of rows ?? []) map.set(String(row.time), Number(row.value));
   return map;
@@ -58,8 +60,8 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
   const jmaPower = integerParam(params.jmaPower, 2, 1, 10_000);
   const exitMode = String(params.exitMode ?? 'vwap-close');
 
-  const jma = jmaPlugin.create({ period: jmaPeriod, phase: jmaPhase, power: jmaPower });
-  const vwap = vwapPlugin.create({
+  const jma = createJmaAnalysis({ period: jmaPeriod, phase: jmaPhase, power: jmaPower });
+  const vwap = createVwapAnalysis({
     stdDev1: 1,
     stdDev2: 2,
     showValue: true,
@@ -136,8 +138,6 @@ function createCalculator(params: StrategyParams): StrategyCalculator {
           reason: '종가 VWAP 상향 재돌파 · JMA 상승',
         });
       }
-      // 상향 재돌파 순간 JMA가 상승이 아니면 추격하지 않는다.
-      // ARM은 유지하고 다음 실제 VWAP 상향 재돌파 사건을 기다린다.
       return { state, signals };
     }
 
