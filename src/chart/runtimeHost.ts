@@ -1,4 +1,9 @@
 import type { OhlcvBar } from './tickAggregation';
+import {
+  createChartRuntimeAddonStateStore,
+  type ChartRuntimeAddonStateDocument,
+  type ChartRuntimeAddonStateStore,
+} from './runtimeAddonState';
 
 export type ChartRuntimeBar = OhlcvBar;
 export type ChartRuntimeBarChange = 'append' | 'replace';
@@ -50,8 +55,8 @@ export interface ChartRuntimeServiceRegistry {
 /**
  * Generic optional visual capability.
  *
- * The runtime owns only visibility composition. Feature semantics and persistent
- * enabled/disabled state stay inside each add-on owner.
+ * The runtime owns only visibility projection. The authoritative master flag lives
+ * in the generic add-on state document; feature semantics remain add-on-owned.
  */
 export interface ChartRuntimeVisualController {
   setVisible(visible: boolean): void;
@@ -81,6 +86,9 @@ export interface ChartRuntimeContext {
   /** Dynamic symbol accessor; no plugin owns ChartForm symbol state. */
   getSymbol(): string;
   readonly services: ChartRuntimeServiceRegistry;
+  /** Per-chart JSON-compatible add-on composition/state Single Source of Truth. */
+  readonly addonState: ChartRuntimeAddonStateStore;
+  /** Visual projection registry driven by addonState.visualsVisible. */
   readonly visuals: ChartRuntimeVisualRegistry;
   getShell(): ChartRuntimeShell | undefined;
   getSurface(): ChartRuntimeSurface | undefined;
@@ -205,13 +213,17 @@ export function registerChartPlugin(
 export interface ChartRuntimeHostOptions {
   getSymbol(): string;
   initialServices?: Readonly<Record<string, unknown>>;
+  /** Optional parent-supplied per-chart add-on state restored before plugin creation. */
+  initialAddonState?: ChartRuntimeAddonStateDocument;
   reportError(message: string): void;
 }
 
 export class ChartRuntimeHost {
   private readonly active: ActivePlugin[] = [];
   private readonly serviceRegistry: ServiceRegistry;
+  private readonly addonStateStore: ChartRuntimeAddonStateStore;
   private readonly visualRegistry = new VisualRegistry();
+  private readonly unsubscribeAddonStateDocument: () => void;
   private shell?: ChartRuntimeShell;
   private surface?: ChartRuntimeSurface;
   private disposed = false;
@@ -222,9 +234,18 @@ export class ChartRuntimeHost {
     options: ChartRuntimeHostOptions,
   ) {
     this.serviceRegistry = new ServiceRegistry(options.initialServices);
+    this.addonStateStore = createChartRuntimeAddonStateStore(options.initialAddonState);
+
+    // STATE FIRST -> projection second. VisualRegistry is never a competing state owner.
+    this.visualRegistry.setVisible(this.addonStateStore.snapshot().visualsVisible);
+    this.unsubscribeAddonStateDocument = this.addonStateStore.subscribeDocument(document => {
+      this.visualRegistry.setVisible(document.visualsVisible);
+    });
+
     this.context = {
       getSymbol: options.getSymbol,
       services: this.serviceRegistry,
+      addonState: this.addonStateStore,
       visuals: this.visualRegistry,
       getShell: () => this.shell,
       getSurface: () => this.surface,
@@ -282,19 +303,30 @@ export class ChartRuntimeHost {
     this.dispatch('onBarChanged', bar, change, bars);
   }
 
+  /** Parent/runtime persistence reads a complete opaque per-chart add-on snapshot here. */
+  getAddonStateSnapshot(): ChartRuntimeAddonStateDocument {
+    return this.addonStateStore.snapshot();
+  }
+
+  /** Restore/replace the authoritative add-on document before subscribers re-project UI. */
+  replaceAddonState(document: ChartRuntimeAddonStateDocument): void {
+    if (this.disposed) return;
+    this.addonStateStore.replace(document);
+  }
+
   /**
    * Macro visual-isolation gate for optional add-ons.
    *
-   * This never mutates feature-owned enabled state. Each registered visual owner
-   * decides how to remove/restore its own surfaces while the base chart remains live.
+   * This commits the master flag to the authoritative add-on state document first.
+   * The VisualRegistry then projects that committed state to registered controllers.
    */
   setAddonVisualsVisible(visible: boolean): void {
     if (this.disposed) return;
-    this.visualRegistry.setVisible(Boolean(visible));
+    this.addonStateStore.setVisualsVisible(Boolean(visible));
   }
 
   areAddonVisualsVisible(): boolean {
-    return this.visualRegistry.isVisible();
+    return this.addonStateStore.snapshot().visualsVisible;
   }
 
   /** Temporary source-compatibility methods for the old ChartExtensionGroup call sites. */
@@ -327,6 +359,7 @@ export class ChartRuntimeHost {
       }
     }
     this.active.length = 0;
+    this.unsubscribeAddonStateDocument();
   }
 
   private dispatch(
