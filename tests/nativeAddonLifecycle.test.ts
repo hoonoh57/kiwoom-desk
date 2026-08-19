@@ -207,7 +207,7 @@ test('indicator state authority is runtime addonState; legacy browser storage is
 
   assert.equal(source.includes('this.context.addonState.read<IndicatorChartState>'), true);
   assert.equal(source.includes('this.context.addonState.write(this.context.stateId'), true);
-  assert.equal(source.includes('this.context.addonState.subscribe<IndicatorChartState>'), true);
+  assert.equal(source.includes('addonState.subscribe<IndicatorChartState>'), true);
   assert.equal(source.includes('localStorage.getItem(STORAGE_KEY)'), true);
   assert.equal(source.includes('localStorage.getItem(LEGACY_STORAGE_KEY)'), true);
   assert.equal(source.includes('localStorage.setItem('), false);
