@@ -47,6 +47,21 @@ export interface ChartRuntimeServiceRegistry {
   provide<T = unknown>(id: string, value: T): { dispose(): void };
 }
 
+/**
+ * Generic optional visual capability.
+ *
+ * The runtime owns only visibility composition. Feature semantics and persistent
+ * enabled/disabled state stay inside each add-on owner.
+ */
+export interface ChartRuntimeVisualController {
+  setVisible(visible: boolean): void;
+}
+
+export interface ChartRuntimeVisualRegistry {
+  isVisible(): boolean;
+  register(id: string, controller: ChartRuntimeVisualController): { dispose(): void };
+}
+
 export interface ChartRuntimeShell {
   root: HTMLElement;
   canvas: HTMLElement;
@@ -66,6 +81,7 @@ export interface ChartRuntimeContext {
   /** Dynamic symbol accessor; no plugin owns ChartForm symbol state. */
   getSymbol(): string;
   readonly services: ChartRuntimeServiceRegistry;
+  readonly visuals: ChartRuntimeVisualRegistry;
   getShell(): ChartRuntimeShell | undefined;
   getSurface(): ChartRuntimeSurface | undefined;
   reportError(message: string): void;
@@ -139,6 +155,41 @@ class ServiceRegistry implements ChartRuntimeServiceRegistry {
   }
 }
 
+class VisualRegistry implements ChartRuntimeVisualRegistry {
+  private readonly controllers = new Map<string, ChartRuntimeVisualController>();
+  private visible = true;
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  register(id: string, controller: ChartRuntimeVisualController): { dispose(): void } {
+    const key = String(id ?? '').trim();
+    if (!key) throw new Error('Chart runtime visual id is required.');
+    if (this.controllers.has(key)) {
+      throw new Error(`Chart runtime visual already registered: ${key}`);
+    }
+    this.controllers.set(key, controller);
+    controller.setVisible(this.visible);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        if (this.controllers.get(key) === controller) this.controllers.delete(key);
+      },
+    };
+  }
+
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
+    for (const controller of this.controllers.values()) {
+      controller.setVisible(visible);
+    }
+  }
+}
+
 const factories = new Map<string, ChartRuntimePluginFactory>();
 
 /** This is the only end-state plugin registration seam for the normal chart runtime. */
@@ -160,6 +211,7 @@ export interface ChartRuntimeHostOptions {
 export class ChartRuntimeHost {
   private readonly active: ActivePlugin[] = [];
   private readonly serviceRegistry: ServiceRegistry;
+  private readonly visualRegistry = new VisualRegistry();
   private shell?: ChartRuntimeShell;
   private surface?: ChartRuntimeSurface;
   private disposed = false;
@@ -173,6 +225,7 @@ export class ChartRuntimeHost {
     this.context = {
       getSymbol: options.getSymbol,
       services: this.serviceRegistry,
+      visuals: this.visualRegistry,
       getShell: () => this.shell,
       getSurface: () => this.surface,
       reportError: options.reportError,
@@ -227,6 +280,21 @@ export class ChartRuntimeHost {
     bars: readonly ChartRuntimeBar[],
   ): void {
     this.dispatch('onBarChanged', bar, change, bars);
+  }
+
+  /**
+   * Macro visual-isolation gate for optional add-ons.
+   *
+   * This never mutates feature-owned enabled state. Each registered visual owner
+   * decides how to remove/restore its own surfaces while the base chart remains live.
+   */
+  setAddonVisualsVisible(visible: boolean): void {
+    if (this.disposed) return;
+    this.visualRegistry.setVisible(Boolean(visible));
+  }
+
+  areAddonVisualsVisible(): boolean {
+    return this.visualRegistry.isVisible();
   }
 
   /** Temporary source-compatibility methods for the old ChartExtensionGroup call sites. */
