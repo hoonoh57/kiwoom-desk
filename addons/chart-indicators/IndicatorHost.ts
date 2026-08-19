@@ -17,6 +17,7 @@ import type {
   IndicatorChartState,
   IndicatorInstanceConfig,
   IndicatorOutputData,
+  IndicatorOutputDef,
   IndicatorOutputUpdate,
   IndicatorParameterDef,
   IndicatorPlugin,
@@ -37,6 +38,17 @@ interface IndicatorRuntime {
 export interface IndicatorHostContext extends ChartExtensionContext {
   addonState: ChartRuntimeAddonStateStore;
   stateId: string;
+}
+
+/** Add-on-owned projection helper. Runtime/Core never interprets output child state. */
+export function indicatorSeriesOptions(
+  output: IndicatorOutputDef,
+  config: IndicatorInstanceConfig,
+): Record<string, unknown> {
+  return {
+    ...(output.options ?? {}),
+    ...(config.style?.[output.id] ?? {}),
+  };
 }
 
 export class IndicatorHost implements ChartExtension {
@@ -225,6 +237,19 @@ export class IndicatorHost implements ChartExtension {
       return;
     }
 
+    if (target.dataset.role === 'output-visible') {
+      const outputId = String(target.dataset.output ?? '').trim();
+      const plugin = getIndicatorPlugin(config.indicatorId);
+      if (!outputId || !plugin?.outputs.some(output => output.id === outputId)) return;
+      config.style = { ...(config.style ?? {}) };
+      config.style[outputId] = {
+        ...(config.style[outputId] ?? {}),
+        visible: (target as HTMLInputElement).checked,
+      };
+      this.commitConfigChange();
+      return;
+    }
+
     const paramKey = target.dataset.param;
     if (!paramKey) return;
 
@@ -328,11 +353,11 @@ export class IndicatorHost implements ChartExtension {
           const seriesType = output.type === 'histogram'
             ? this.context.lc.HistogramSeries
             : this.context.lc.LineSeries;
-          const options = {
-            ...(output.options ?? {}),
-            ...(config.style?.[output.id] ?? {}),
-          };
-          const series = this.context.chart.addSeries(seriesType, options, resolvedPane);
+          const series = this.context.chart.addSeries(
+            seriesType,
+            indicatorSeriesOptions(output, config),
+            resolvedPane,
+          );
           runtime.series.set(output.id, series);
           if (usesOwnPane && !runtime.pane) runtime.pane = series.getPane?.();
         }
@@ -517,6 +542,7 @@ export class IndicatorHost implements ChartExtension {
     }
 
     const params = plugin.parameters.map(def => this.paramHtml(config, def)).join('');
+    const outputs = plugin.outputs.map(output => this.outputHtml(config, output)).join('');
     const ownPane = plugin.outputs.some(output => (config.pane ?? output.pane) === 'own');
     const paneText = ownPane ? ` · pane ${Math.round(config.paneHeight ?? 120)}px` : '';
     return `
@@ -528,7 +554,21 @@ export class IndicatorHost implements ChartExtension {
           <button type="button" class="lnk" data-action="remove">삭제</button>
         </div>
         <div class="indicator-params">${params}</div>
+        <div class="indicator-params indicator-outputs">${outputs}</div>
       </div>`;
+  }
+
+  private outputHtml(
+    config: IndicatorInstanceConfig,
+    output: IndicatorOutputDef,
+  ): string {
+    const visible = config.style?.[output.id]?.visible !== false;
+    return `
+      <label class="chk"><input type="checkbox"
+        data-role="output-visible"
+        data-instance="${this.esc(config.instanceId)}"
+        data-output="${this.esc(output.id)}"
+        ${visible ? 'checked' : ''}> ${this.esc(output.label)}</label>`;
   }
 
   private orderButtons(index: number): string {
