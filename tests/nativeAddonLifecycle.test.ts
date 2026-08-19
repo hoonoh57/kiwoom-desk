@@ -190,11 +190,29 @@ test('indicator addon owns native registration instead of legacy extension compa
     'utf8',
   );
 
-  assert.equal(source.includes("registerChartPlugin('indicators'"), true);
-  assert.equal(source.includes("runtime.visuals.register('indicators'"), true);
+  assert.equal(source.includes("const INDICATOR_STATE_ID = 'indicators'"), true);
+  assert.equal(source.includes('registerChartPlugin(INDICATOR_STATE_ID'), true);
+  assert.equal(source.includes('runtime.visuals.register(INDICATOR_STATE_ID'), true);
+  assert.equal(source.includes('addonState: runtime.addonState'), true);
   assert.equal(source.includes('registerChartExtension'), false);
   assert.equal(source.includes('runtime.series.set'), false);
   assert.equal(source.includes('chart.addSeries'), false);
+});
+
+test('indicator state authority is runtime addonState; legacy browser storage is migration-input only', async () => {
+  const source = await readFile(
+    new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.equal(source.includes('this.context.addonState.read<IndicatorChartState>'), true);
+  assert.equal(source.includes('this.context.addonState.write(this.context.stateId'), true);
+  assert.equal(source.includes('this.context.addonState.subscribe<IndicatorChartState>'), true);
+  assert.equal(source.includes('localStorage.getItem(STORAGE_KEY)'), true);
+  assert.equal(source.includes('localStorage.getItem(LEGACY_STORAGE_KEY)'), true);
+  assert.equal(source.includes('localStorage.setItem('), false);
+  assert.equal(source.includes('window.dispatchEvent(new CustomEvent'), false);
+  assert.equal(source.includes('STATE_EVENT'), false);
 });
 
 test('indicator implementation semantics remain inside IndicatorHost during ownership migration', async () => {
