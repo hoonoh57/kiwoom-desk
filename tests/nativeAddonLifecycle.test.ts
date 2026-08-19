@@ -96,3 +96,25 @@ test('indicator implementation semantics remain inside IndicatorHost during owne
   assert.equal(source.includes('setAddonVisualsVisible'), false);
   assert.equal(source.includes('ChartRuntimeVisual'), false);
 });
+
+test('strategy addon does not import indicator addon implementation', async () => {
+  const source = await readFile(
+    new URL('../addons/chart-strategies/plugins/vwapJmaReclaim.ts', import.meta.url),
+    'utf8',
+  );
+  assert.equal(source.includes('chart-indicators'), false);
+  assert.equal(source.includes('chart-analysis/vwapJma'), true);
+});
+
+test('JMA and VWAP indicator wrappers consume the same shared analysis kernels as strategies', async () => {
+  const jma = await readFile(
+    new URL('../addons/chart-indicators/plugins/jma.ts', import.meta.url),
+    'utf8',
+  );
+  const vwap = await readFile(
+    new URL('../addons/chart-indicators/plugins/vwap.ts', import.meta.url),
+    'utf8',
+  );
+  assert.equal(jma.includes('createJmaAnalysis'), true);
+  assert.equal(vwap.includes('createVwapAnalysis'), true);
+});
