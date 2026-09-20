@@ -3,6 +3,7 @@ import './styles/layout.css';
 import './styles/embed.css';
 
 import { AppContext } from './core/context';
+import { Topics, type SymbolPayload } from './core/events';
 import { createForm, getFormMeta } from './forms/registry';
 import type { ChildForm } from './forms/ChildForm';
 
@@ -25,12 +26,32 @@ async function bootstrap(): Promise<void> {
 
   const { formIds, params } = querySpec();
   const ctx = new AppContext();
+  if (params.code) {
+    ctx.state.symbol = {
+      code: String(params.code),
+      name: String(params.name ?? ''),
+    };
+  }
   let activeForm: ChildForm | undefined;
   let activeFormId = '';
 
   host.innerHTML = '<div class="embed-shell"><div class="embed-tabs"></div><div class="embed-form-host"></div></div>';
   const tabs = host.querySelector<HTMLElement>('.embed-tabs')!;
   const formHost = host.querySelector<HTMLElement>('.embed-form-host')!;
+
+  ctx.bus.on<SymbolPayload>(Topics.SymbolSelected, payload => {
+    if (!payload?.code) return;
+    ctx.state.symbol = {
+      code: String(payload.code),
+      name: String(payload.name ?? ''),
+    };
+    window.parent.postMessage({
+      type: 'kiwoom-desk-symbol-selected',
+      code: String(payload.code),
+      name: String(payload.name ?? ''),
+      source: String(payload.source ?? ''),
+    }, '*');
+  });
 
   (ctx as any).dock = {
     open(nextFormId: string, nextParams: Record<string, any> = {}) {
@@ -103,7 +124,8 @@ async function bootstrap(): Promise<void> {
       mode: status.mode,
       tokenValid: status.tokenValid,
     });
-    if (status.tokenValid) ctx.rt.connect();
+    const needsRealtime = formIds.some(formId => formId === 'condition' || formId === 'watchlist');
+    if (status.tokenValid && needsRealtime) ctx.rt.connect();
   } catch (error: any) {
     ctx.log.error('임베드 연결 상태 확인 실패: ' + String(error?.message ?? error));
   }
