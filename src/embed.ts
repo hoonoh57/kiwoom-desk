@@ -5,26 +5,28 @@ import './styles/embed.css';
 import { AppContext } from './core/context';
 import { Topics, type SymbolPayload } from './core/events';
 import { createForm, getFormMeta } from './forms/registry';
+import { TR_FLAT } from './api/endpoints';
 import type { ChildForm } from './forms/ChildForm';
 
-function querySpec(): { formIds: string[]; params: Record<string, any> } {
+function querySpec(): { formIds: string[]; params: Record<string, any>; trCatalog: boolean } {
   const q = new URLSearchParams(location.search);
   const forms = String(q.get('forms') || '').split(',').map(v => v.trim()).filter(Boolean);
   const single = String(q.get('form') || '').trim();
   const formIds = forms.length ? forms : [single || 'welcome'];
   const params: Record<string, any> = {};
+  const trCatalog = String(q.get('catalog') || '').trim().toLowerCase() === 'tr';
   for (const [key, value] of q.entries()) {
-    if (key === 'form' || key === 'forms') continue;
+    if (key === 'form' || key === 'forms' || key === 'catalog') continue;
     params[key] = value;
   }
-  return { formIds, params };
+  return { formIds, params, trCatalog };
 }
 
 async function bootstrap(): Promise<void> {
   const host = document.getElementById('embed-root');
   if (!host) throw new Error('#embed-root not found');
 
-  const { formIds, params } = querySpec();
+  const { formIds, params, trCatalog } = querySpec();
   const ctx = new AppContext();
   if (params.code) {
     ctx.state.symbol = {
@@ -35,7 +37,13 @@ async function bootstrap(): Promise<void> {
   let activeForm: ChildForm | undefined;
   let activeFormId = '';
 
-  host.innerHTML = '<div class="embed-shell"><div class="embed-tabs"></div><div class="embed-form-host"></div></div>';
+  host.innerHTML =
+    '<div class="embed-shell">' +
+    '<div class="embed-tr-catalog" hidden></div>' +
+    '<div class="embed-tabs"></div>' +
+    '<div class="embed-form-host"></div>' +
+    '</div>';
+  const trCatalogHost = host.querySelector<HTMLElement>('.embed-tr-catalog')!;
   const tabs = host.querySelector<HTMLElement>('.embed-tabs')!;
   const formHost = host.querySelector<HTMLElement>('.embed-form-host')!;
 
@@ -98,6 +106,40 @@ async function bootstrap(): Promise<void> {
     tabs.querySelectorAll<HTMLButtonElement>('[data-form]').forEach(button => {
       button.classList.toggle('on', button.dataset.form === formId);
     });
+  }
+
+  if (trCatalog) {
+    trCatalogHost.hidden = false;
+
+    const label = document.createElement('label');
+    label.textContent = 'TR';
+
+    const select = document.createElement('select');
+    select.className = 'embed-tr-select';
+    for (const tr of TR_FLAT) {
+      const option = document.createElement('option');
+      option.value = tr.apiId;
+      option.textContent = tr.group + ' · ' + tr.apiId + ' · ' + tr.name;
+      select.appendChild(option);
+    }
+
+    const initialApiId = String(params.apiId || TR_FLAT[0]?.apiId || '');
+    if (initialApiId) select.value = initialApiId;
+
+    const openSelected = () => {
+      const tr = TR_FLAT.find(item => item.apiId === select.value);
+      if (!tr) return;
+      mount(tr.formId, {apiId: tr.apiId});
+    };
+
+    select.addEventListener('change', openSelected);
+    trCatalogHost.append(label, select);
+
+    const initial = TR_FLAT.find(item => item.apiId === initialApiId) ?? TR_FLAT[0];
+    if (initial) {
+      formIds.splice(0, formIds.length, initial.formId);
+      params.apiId = initial.apiId;
+    }
   }
 
   if (formIds.length > 1) {
