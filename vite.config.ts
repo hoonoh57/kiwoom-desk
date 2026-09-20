@@ -22,5 +22,14 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:3010', ws: true }
     }
   },
-  build: { target: 'es2022', outDir: 'dist' }
+  build: {
+    target: 'es2022',
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        embed: 'embed.html',
+      },
+    },
+  }
 });
