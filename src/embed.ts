@@ -3,59 +3,96 @@ import './styles/layout.css';
 
 import { AppContext } from './core/context';
 import { createForm, getFormMeta } from './forms/registry';
+import type { ChildForm } from './forms/ChildForm';
 
-function queryParams(): { formId: string; params: Record<string, any> } {
+function querySpec(): { formIds: string[]; params: Record<string, any> } {
   const q = new URLSearchParams(location.search);
-  const formId = String(q.get('form') || 'welcome').trim();
+  const forms = String(q.get('forms') || '').split(',').map(v => v.trim()).filter(Boolean);
+  const single = String(q.get('form') || '').trim();
+  const formIds = forms.length ? forms : [single || 'welcome'];
   const params: Record<string, any> = {};
   for (const [key, value] of q.entries()) {
-    if (key === 'form') continue;
+    if (key === 'form' || key === 'forms') continue;
     params[key] = value;
   }
-  return { formId, params };
+  return { formIds, params };
 }
 
 async function bootstrap(): Promise<void> {
   const host = document.getElementById('embed-root');
   if (!host) throw new Error('#embed-root not found');
-  host.style.width = '100vw';
-  host.style.height = '100vh';
-  host.style.overflow = 'hidden';
 
-  const { formId, params } = queryParams();
+  const { formIds, params } = querySpec();
   const ctx = new AppContext();
+  let activeForm: ChildForm | undefined;
+  let activeFormId = '';
+
+  host.innerHTML = '<div class="embed-shell"><div class="embed-tabs"></div><div class="embed-form-host"></div></div>';
+  const tabs = host.querySelector<HTMLElement>('.embed-tabs')!;
+  const formHost = host.querySelector<HTMLElement>('.embed-form-host')!;
 
   (ctx as any).dock = {
     open(nextFormId: string, nextParams: Record<string, any> = {}) {
-      window.parent.postMessage({
-        type: 'kiwoom-desk-open',
-        formId: nextFormId,
-        params: nextParams,
-      }, '*');
+      if (formIds.includes(nextFormId)) {
+        mount(nextFormId, nextParams);
+      } else {
+        window.parent.postMessage({
+          type: 'kiwoom-desk-open',
+          formId: nextFormId,
+          params: nextParams,
+        }, '*');
+      }
       return undefined;
     },
   };
 
-  const panelApi = {
-    setTitle(title: string) {
-      document.title = title;
-      window.parent.postMessage({
-        type: 'kiwoom-desk-title',
-        formId,
-        title,
-      }, '*');
-    },
-    close() {
-      window.parent.postMessage({
-        type: 'kiwoom-desk-close',
-        formId,
-      }, '*');
-    },
-  };
+  function mount(formId: string, nextParams: Record<string, any> = {}): void {
+    activeForm?.dispose();
+    activeForm = undefined;
+    activeFormId = formId;
+    formHost.replaceChildren();
 
-  const form = createForm(formId, ctx, params);
-  form.attach(host, panelApi);
-  document.title = getFormMeta(formId).title;
+    const panelApi = {
+      setTitle(title: string) {
+        document.title = title;
+        window.parent.postMessage({
+          type: 'kiwoom-desk-title',
+          formId,
+          title,
+        }, '*');
+      },
+      close() {
+        window.parent.postMessage({
+          type: 'kiwoom-desk-close',
+          formId,
+        }, '*');
+      },
+    };
+
+    activeForm = createForm(formId, ctx, { ...params, ...nextParams });
+    activeForm.attach(formHost, panelApi);
+    document.title = getFormMeta(formId).title;
+
+    tabs.querySelectorAll<HTMLButtonElement>('[data-form]').forEach(button => {
+      button.classList.toggle('on', button.dataset.form === formId);
+    });
+  }
+
+  if (formIds.length > 1) {
+    for (const formId of formIds) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'embed-tab';
+      button.dataset.form = formId;
+      button.textContent = getFormMeta(formId).title;
+      button.addEventListener('click', () => mount(formId));
+      tabs.appendChild(button);
+    }
+  } else {
+    tabs.hidden = true;
+  }
+
+  mount(formIds[0]);
 
   try {
     const status = await ctx.api.status();
@@ -71,7 +108,8 @@ async function bootstrap(): Promise<void> {
   }
 
   window.addEventListener('beforeunload', () => {
-    form.dispose();
+    activeForm?.dispose();
+    activeForm = undefined;
     ctx.rt.dispose();
     ctx.bus.dispose();
     ctx.commands.dispose();
