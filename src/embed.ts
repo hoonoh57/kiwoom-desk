@@ -1,5 +1,6 @@
 import '@vscode/codicons/dist/codicon.css';
 import './styles/layout.css';
+import './styles/embed.css';
 
 import { AppContext } from './core/context';
 import { createForm, getFormMeta } from './forms/registry';
