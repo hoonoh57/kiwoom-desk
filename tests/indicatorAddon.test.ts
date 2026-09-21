@@ -214,6 +214,22 @@ test('all indicator plugins honor real-time append/replace incremental parity', 
   for (const [plugin, params] of cases) assertIncrementalParity(plugin, params);
 });
 
+test('generic nested output visibility commits before chart projection on the actual IndicatorHost path', async () => {
+  const host = await readFile(
+    new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.equal(host.includes("target.dataset.role === 'output-visible'"), true);
+  assert.equal(host.includes('config.style[outputId] = {'), true);
+  assert.equal(host.includes('visible: (target as HTMLInputElement).checked'), true);
+  assert.equal(host.includes('this.commitConfigChange();'), true);
+  assert.equal(host.includes('this.context.addonState.write(this.context.stateId'), true);
+  assert.equal(host.includes('indicatorSeriesOptions(output, config)'), true);
+  assert.equal(host.includes('...(output.options ?? {})'), true);
+  assert.equal(host.includes('...(config.style?.[output.id] ?? {})'), true);
+});
+
 test('IndicatorHost uses setData only for reset and update for live changes', async () => {
   const host = await readFile(new URL('../addons/chart-indicators/IndicatorHost.ts', import.meta.url), 'utf8');
 
@@ -235,6 +251,8 @@ test('indicator JSON schema persists pane order and height with v1 migration bou
   assert.equal(host.includes('setHeight'), true);
   assert.equal(host.includes('data-action="move-up"'), true);
   assert.equal(host.includes('data-action="move-down"'), true);
+  assert.equal(host.includes('data-role="output-visible"'), true);
+  assert.equal(host.includes('config.style[outputId]'), true);
 });
 
 test('ChartForm keeps indicator names and calculations out of the base chart', async () => {

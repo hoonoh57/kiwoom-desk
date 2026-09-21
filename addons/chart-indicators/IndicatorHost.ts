@@ -4,6 +4,7 @@ import type {
   ChartExtension,
   ChartExtensionContext,
 } from '../../src/chart/extensions';
+import type { ChartRuntimeAddonStateStore } from '../../src/chart/runtimeAddonState';
 import {
   createDefaultIndicatorState,
   defaultParams,
@@ -16,6 +17,7 @@ import type {
   IndicatorChartState,
   IndicatorInstanceConfig,
   IndicatorOutputData,
+  IndicatorOutputDef,
   IndicatorOutputUpdate,
   IndicatorParameterDef,
   IndicatorPlugin,
@@ -23,8 +25,6 @@ import type {
 
 const STORAGE_KEY = 'kiwoom-desk.chart.indicators.v2';
 const LEGACY_STORAGE_KEY = 'kiwoom-desk.chart.indicators.v1';
-const STATE_EVENT = 'kiwoom-desk:indicator-state';
-let hostSeq = 0;
 
 interface IndicatorRuntime {
   config: IndicatorInstanceConfig;
@@ -35,13 +35,23 @@ interface IndicatorRuntime {
   failed: boolean;
 }
 
-interface StateEventDetail {
-  source: string;
-  state: IndicatorChartState;
+export interface IndicatorHostContext extends ChartExtensionContext {
+  addonState: ChartRuntimeAddonStateStore;
+  stateId: string;
+}
+
+/** Add-on-owned projection helper. Runtime/Core never interprets output child state. */
+export function indicatorSeriesOptions(
+  output: IndicatorOutputDef,
+  config: IndicatorInstanceConfig,
+): Record<string, unknown> {
+  return {
+    ...(output.options ?? {}),
+    ...(config.style?.[output.id] ?? {}),
+  };
 }
 
 export class IndicatorHost implements ChartExtension {
-  private readonly hostId = `indicator-host-${++hostSeq}`;
   private readonly root = document.createElement('span');
   private readonly button = document.createElement('button');
   private readonly count = document.createElement('span');
@@ -52,11 +62,24 @@ export class IndicatorHost implements ChartExtension {
   private opened = false;
   private instanceSeq = 0;
   private disposed = false;
+  private writingState = false;
+  private unsubscribeState?: () => void;
   private panelMessage = '';
   private paneCaptureFrame?: number;
 
-  constructor(private readonly context: ChartExtensionContext) {
+  constructor(private readonly context: IndicatorHostContext) {
     this.state = this.loadState();
+    this.unsubscribeState = context.addonState.subscribe<IndicatorChartState>(
+      context.stateId,
+      node => {
+        if (this.disposed || this.writingState) return;
+        this.state = node
+          ? normalizeIndicatorState(node.state)
+          : createDefaultIndicatorState();
+        this.rebuild();
+        this.setPanelMessage('저장된 지표 구성과 pane 레이아웃을 적용했습니다.');
+      },
+    );
 
     this.root.className = 'chart-indicator-addon';
     this.button.type = 'button';
@@ -71,7 +94,6 @@ export class IndicatorHost implements ChartExtension {
     this.button.addEventListener('click', this.onToggle);
     this.panel.addEventListener('click', this.onPanelClick);
     this.panel.addEventListener('change', this.onPanelChange);
-    window.addEventListener(STATE_EVENT, this.onExternalState as EventListener);
     window.addEventListener('pointerup', this.onPaneInteractionEnd);
 
     this.rebuild();
@@ -117,8 +139,9 @@ export class IndicatorHost implements ChartExtension {
     this.button.removeEventListener('click', this.onToggle);
     this.panel.removeEventListener('click', this.onPanelClick);
     this.panel.removeEventListener('change', this.onPanelChange);
-    window.removeEventListener(STATE_EVENT, this.onExternalState as EventListener);
     window.removeEventListener('pointerup', this.onPaneInteractionEnd);
+    this.unsubscribeState?.();
+    this.unsubscribeState = undefined;
     this.clearRuntimes();
     this.root.remove();
   }
@@ -214,6 +237,19 @@ export class IndicatorHost implements ChartExtension {
       return;
     }
 
+    if (target.dataset.role === 'output-visible') {
+      const outputId = String(target.dataset.output ?? '').trim();
+      const plugin = getIndicatorPlugin(config.indicatorId);
+      if (!outputId || !plugin?.outputs.some(output => output.id === outputId)) return;
+      config.style = { ...(config.style ?? {}) };
+      config.style[outputId] = {
+        ...(config.style[outputId] ?? {}),
+        visible: (target as HTMLInputElement).checked,
+      };
+      this.commitConfigChange();
+      return;
+    }
+
     const paramKey = target.dataset.param;
     if (!paramKey) return;
 
@@ -232,14 +268,6 @@ export class IndicatorHost implements ChartExtension {
     config.params = normalizeParams(plugin, config.params);
     config.pluginVersion = plugin.version;
     this.commitConfigChange();
-  };
-
-  private readonly onExternalState = (event: CustomEvent<StateEventDetail>): void => {
-    const detail = event.detail;
-    if (!detail || detail.source === this.hostId || this.disposed) return;
-    this.state = normalizeIndicatorState(detail.state);
-    this.rebuild();
-    this.setPanelMessage('다른 차트에서 변경한 지표 구성과 pane 레이아웃을 동기화했습니다.');
   };
 
   private addIndicator(indicatorId: string): void {
@@ -325,11 +353,11 @@ export class IndicatorHost implements ChartExtension {
           const seriesType = output.type === 'histogram'
             ? this.context.lc.HistogramSeries
             : this.context.lc.LineSeries;
-          const options = {
-            ...(output.options ?? {}),
-            ...(config.style?.[output.id] ?? {}),
-          };
-          const series = this.context.chart.addSeries(seriesType, options, resolvedPane);
+          const series = this.context.chart.addSeries(
+            seriesType,
+            indicatorSeriesOptions(output, config),
+            resolvedPane,
+          );
           runtime.series.set(output.id, series);
           if (usesOwnPane && !runtime.pane) runtime.pane = series.getPane?.();
         }
@@ -425,37 +453,40 @@ export class IndicatorHost implements ChartExtension {
   }
 
   private loadState(): IndicatorChartState {
+    const current = this.context.addonState.read<IndicatorChartState>(this.context.stateId);
+    if (current) return normalizeIndicatorState(current.state);
+
+    let migrated: IndicatorChartState | undefined;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return normalizeIndicatorState(JSON.parse(saved));
-
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-      if (legacy) {
-        const migrated = normalizeIndicatorState(JSON.parse(legacy));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-        return migrated;
+      if (saved) migrated = normalizeIndicatorState(JSON.parse(saved));
+      if (!migrated) {
+        const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+        if (legacy) migrated = normalizeIndicatorState(JSON.parse(legacy));
       }
     } catch {
-      // 손상된 저장값은 기본값으로 복구한다.
+      // 손상된 레거시 저장값은 기본값으로 복구한다.
     }
-    return createDefaultIndicatorState();
+
+    const initial = migrated ?? createDefaultIndicatorState();
+    this.writeState(initial);
+    return initial;
   }
 
-  private persistState(broadcast = true): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-    } catch {
-      // 저장소가 막혀 있어도 현재 세션 차트 동작은 유지한다.
-    }
+  private persistState(_broadcast = true): void {
+    this.writeState(this.state);
+  }
 
-    if (!broadcast) return;
-    window.dispatchEvent(new CustomEvent<StateEventDetail>(STATE_EVENT, {
-      detail: {
-        source: this.hostId,
-        state: this.state,
-      },
-    }));
+  private writeState(state: IndicatorChartState): void {
+    this.writingState = true;
+    try {
+      this.context.addonState.write(this.context.stateId, {
+        enabled: true,
+        state: normalizeIndicatorState(state),
+      });
+    } finally {
+      this.writingState = false;
+    }
   }
 
   private refreshCount(): void {
@@ -511,6 +542,7 @@ export class IndicatorHost implements ChartExtension {
     }
 
     const params = plugin.parameters.map(def => this.paramHtml(config, def)).join('');
+    const outputs = plugin.outputs.map(output => this.outputHtml(config, output)).join('');
     const ownPane = plugin.outputs.some(output => (config.pane ?? output.pane) === 'own');
     const paneText = ownPane ? ` · pane ${Math.round(config.paneHeight ?? 120)}px` : '';
     return `
@@ -522,7 +554,21 @@ export class IndicatorHost implements ChartExtension {
           <button type="button" class="lnk" data-action="remove">삭제</button>
         </div>
         <div class="indicator-params">${params}</div>
+        <div class="indicator-params indicator-outputs">${outputs}</div>
       </div>`;
+  }
+
+  private outputHtml(
+    config: IndicatorInstanceConfig,
+    output: IndicatorOutputDef,
+  ): string {
+    const visible = config.style?.[output.id]?.visible !== false;
+    return `
+      <label class="chk"><input type="checkbox"
+        data-role="output-visible"
+        data-instance="${this.esc(config.instanceId)}"
+        data-output="${this.esc(output.id)}"
+        ${visible ? 'checked' : ''}> ${this.esc(output.label)}</label>`;
   }
 
   private orderButtons(index: number): string {

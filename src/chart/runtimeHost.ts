@@ -1,4 +1,9 @@
 import type { OhlcvBar } from './tickAggregation';
+import {
+  createChartRuntimeAddonStateStore,
+  type ChartRuntimeAddonStateDocument,
+  type ChartRuntimeAddonStateStore,
+} from './runtimeAddonState';
 
 export type ChartRuntimeBar = OhlcvBar;
 export type ChartRuntimeBarChange = 'append' | 'replace';
@@ -47,6 +52,21 @@ export interface ChartRuntimeServiceRegistry {
   provide<T = unknown>(id: string, value: T): { dispose(): void };
 }
 
+/**
+ * Generic optional visual capability.
+ *
+ * The runtime owns only visibility projection. The authoritative master flag lives
+ * in the generic add-on state document; feature semantics remain add-on-owned.
+ */
+export interface ChartRuntimeVisualController {
+  setVisible(visible: boolean): void;
+}
+
+export interface ChartRuntimeVisualRegistry {
+  isVisible(): boolean;
+  register(id: string, controller: ChartRuntimeVisualController): { dispose(): void };
+}
+
 export interface ChartRuntimeShell {
   root: HTMLElement;
   canvas: HTMLElement;
@@ -66,6 +86,10 @@ export interface ChartRuntimeContext {
   /** Dynamic symbol accessor; no plugin owns ChartForm symbol state. */
   getSymbol(): string;
   readonly services: ChartRuntimeServiceRegistry;
+  /** Per-chart JSON-compatible add-on composition/state Single Source of Truth. */
+  readonly addonState: ChartRuntimeAddonStateStore;
+  /** Visual projection registry driven by addonState.visualsVisible. */
+  readonly visuals: ChartRuntimeVisualRegistry;
   getShell(): ChartRuntimeShell | undefined;
   getSurface(): ChartRuntimeSurface | undefined;
   reportError(message: string): void;
@@ -139,6 +163,41 @@ class ServiceRegistry implements ChartRuntimeServiceRegistry {
   }
 }
 
+class VisualRegistry implements ChartRuntimeVisualRegistry {
+  private readonly controllers = new Map<string, ChartRuntimeVisualController>();
+  private visible = true;
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  register(id: string, controller: ChartRuntimeVisualController): { dispose(): void } {
+    const key = String(id ?? '').trim();
+    if (!key) throw new Error('Chart runtime visual id is required.');
+    if (this.controllers.has(key)) {
+      throw new Error(`Chart runtime visual already registered: ${key}`);
+    }
+    this.controllers.set(key, controller);
+    controller.setVisible(this.visible);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        if (this.controllers.get(key) === controller) this.controllers.delete(key);
+      },
+    };
+  }
+
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
+    for (const controller of this.controllers.values()) {
+      controller.setVisible(visible);
+    }
+  }
+}
+
 const factories = new Map<string, ChartRuntimePluginFactory>();
 
 /** This is the only end-state plugin registration seam for the normal chart runtime. */
@@ -154,12 +213,17 @@ export function registerChartPlugin(
 export interface ChartRuntimeHostOptions {
   getSymbol(): string;
   initialServices?: Readonly<Record<string, unknown>>;
+  /** Optional parent-supplied per-chart add-on state restored before plugin creation. */
+  initialAddonState?: ChartRuntimeAddonStateDocument;
   reportError(message: string): void;
 }
 
 export class ChartRuntimeHost {
   private readonly active: ActivePlugin[] = [];
   private readonly serviceRegistry: ServiceRegistry;
+  private readonly addonStateStore: ChartRuntimeAddonStateStore;
+  private readonly visualRegistry = new VisualRegistry();
+  private readonly unsubscribeAddonStateDocument: () => void;
   private shell?: ChartRuntimeShell;
   private surface?: ChartRuntimeSurface;
   private disposed = false;
@@ -170,9 +234,19 @@ export class ChartRuntimeHost {
     options: ChartRuntimeHostOptions,
   ) {
     this.serviceRegistry = new ServiceRegistry(options.initialServices);
+    this.addonStateStore = createChartRuntimeAddonStateStore(options.initialAddonState);
+
+    // STATE FIRST -> projection second. VisualRegistry is never a competing state owner.
+    this.visualRegistry.setVisible(this.addonStateStore.snapshot().visualsVisible);
+    this.unsubscribeAddonStateDocument = this.addonStateStore.subscribeDocument(document => {
+      this.visualRegistry.setVisible(document.visualsVisible);
+    });
+
     this.context = {
       getSymbol: options.getSymbol,
       services: this.serviceRegistry,
+      addonState: this.addonStateStore,
+      visuals: this.visualRegistry,
       getShell: () => this.shell,
       getSurface: () => this.surface,
       reportError: options.reportError,
@@ -229,6 +303,32 @@ export class ChartRuntimeHost {
     this.dispatch('onBarChanged', bar, change, bars);
   }
 
+  /** Parent/runtime persistence reads a complete opaque per-chart add-on snapshot here. */
+  getAddonStateSnapshot(): ChartRuntimeAddonStateDocument {
+    return this.addonStateStore.snapshot();
+  }
+
+  /** Restore/replace the authoritative add-on document before subscribers re-project UI. */
+  replaceAddonState(document: ChartRuntimeAddonStateDocument): void {
+    if (this.disposed) return;
+    this.addonStateStore.replace(document);
+  }
+
+  /**
+   * Macro visual-isolation gate for optional add-ons.
+   *
+   * This commits the master flag to the authoritative add-on state document first.
+   * The VisualRegistry then projects that committed state to registered controllers.
+   */
+  setAddonVisualsVisible(visible: boolean): void {
+    if (this.disposed) return;
+    this.addonStateStore.setVisualsVisible(Boolean(visible));
+  }
+
+  areAddonVisualsVisible(): boolean {
+    return this.addonStateStore.snapshot().visualsVisible;
+  }
+
   /** Temporary source-compatibility methods for the old ChartExtensionGroup call sites. */
   onBarsReset(bars: readonly ChartRuntimeBar[]): void {
     this.barsReset(bars);
@@ -259,6 +359,7 @@ export class ChartRuntimeHost {
       }
     }
     this.active.length = 0;
+    this.unsubscribeAddonStateDocument();
   }
 
   private dispatch(
